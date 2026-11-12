@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --color-roomie-bg: #242424;
+  --color-roomie-surface: #303030;
+  --color-roomie-card: #383838;
+  --color-roomie-yellow: #FFD43B;
+  --color-roomie-text: #F5F5F5;
+  --color-roomie-muted: #B8B8B8;
+  --color-roomie-border: rgba(255, 255, 255, 0.09);
+  --color-roomie-border-subtle: rgba(255, 255, 255, 0.05);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #242424;
+  color: #F5F5F5;
+}
