@@ -1,11 +1,11 @@
 import React from 'react';
-import { Flame, Star, MessageSquare, User, LogOut, Home, Search } from 'lucide-react';
+import { Flame, Star, MessageSquare, User, LogOut, Home, Search, Mail } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface AppHeaderProps {
   currentUser: UserProfile;
-  currentTab: 'discover' | 'top_picks' | 'matches' | 'profile';
-  onTabChange: (tab: 'discover' | 'top_picks' | 'matches' | 'profile') => void;
+  currentTab: 'discover' | 'top_picks' | 'matches' | 'gmail' | 'profile';
+  onTabChange: (tab: 'discover' | 'top_picks' | 'matches' | 'gmail' | 'profile') => void;
   matchesCount: number;
   onSignOut: () => void;
 }
@@ -110,7 +110,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             )}
           </button>
 
-          {/* 4. PROFILE (My Profile & Settings) */}
+          {/* 4. GMAIL (Flatmate Outreach & Inbox) */}
+          <button
+            onClick={() => onTabChange('gmail')}
+            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+              currentTab === 'gmail'
+                ? 'text-[#FFD43B] bg-[#303030] shadow-md scale-105'
+                : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
+            }`}
+            title="Gmail Inbox & Outreach"
+          >
+            <Mail className="w-6 h-6 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">Gmail</span>
+          </button>
+
+          {/* 5. PROFILE (My Profile & Settings) */}
           <button
             onClick={() => onTabChange('profile')}
             className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FlatmateCandidate } from '../types';
-import { Send, MapPin, Sparkles } from 'lucide-react';
+import { Send, MapPin, Sparkles, Mail } from 'lucide-react';
 import {
   FirestoreChatMessage,
   FirestoreMatchRecord,
@@ -15,6 +15,7 @@ interface MatchesViewProps {
   matchRecords: FirestoreMatchRecord[];
   initialChatCandidate?: FlatmateCandidate | null;
   onExploreMore: () => void;
+  onEmailInvite?: (candidate: FlatmateCandidate) => void;
 }
 
 export const MatchesView: React.FC<MatchesViewProps> = ({
@@ -23,6 +24,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   matchRecords,
   initialChatCandidate,
   onExploreMore,
+  onEmailInvite,
 }) => {
   const [selectedChat, setSelectedChat] = useState<FlatmateCandidate | null>(
     initialChatCandidate || (matchedCandidates.length > 0 ? matchedCandidates[0] : null)
@@ -245,7 +247,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-right text-[11px] text-[#8e8e8e]">
+                  <div className="flex items-center gap-2.5 text-right text-[11px] text-[#8e8e8e]">
+                    {onEmailInvite && (
+                      <button
+                        type="button"
+                        onClick={() => onEmailInvite(selectedChat)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#383838] hover:bg-[#444444] text-[#FFD43B] font-semibold border border-[#484848] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Send flat visit invite via Gmail"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Gmail Invite</span>
+                      </button>
+                    )}
                     <span className="text-emerald-400 font-bold block">● Verified Roomie</span>
                   </div>
                 </div>

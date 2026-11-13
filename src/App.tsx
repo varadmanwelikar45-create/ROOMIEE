@@ -8,8 +8,9 @@ import { DiscoveryDeck } from './components/DiscoveryDeck';
 import { MatchesView } from './components/MatchesView';
 import { TopPicksView } from './components/TopPicksView';
 import { ProfileView } from './components/ProfileView';
+import { GmailView, GmailComposePrefill } from './components/GmailView';
 import { CityBuildings } from './components/CityBuildings';
-import { auth } from './firebase';
+import { auth, clearGmailAccessToken } from './firebase';
 import {
   FirestoreMatchRecord,
   loadUserProfileFromDb,
@@ -24,7 +25,7 @@ export default function App() {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [currentTab, setCurrentTab] = useState<'discover' | 'top_picks' | 'matches' | 'profile'>('discover');
+  const [currentTab, setCurrentTab] = useState<'discover' | 'top_picks' | 'matches' | 'gmail' | 'profile'>('discover');
 
   // Real-time community candidates synced from Firestore
   const [allCandidates, setAllCandidates] = useState<FlatmateCandidate[]>([]);
@@ -34,6 +35,9 @@ export default function App() {
 
   // Active chat target for direct transition from Match modal or Top Picks
   const [activeChatCandidate, setActiveChatCandidate] = useState<FlatmateCandidate | null>(null);
+
+  // Prefill payload when jumping from Matches chat to Gmail Compose
+  const [gmailPrefill, setGmailPrefill] = useState<GmailComposePrefill | null>(null);
 
   // Gender match filter: Defaults to matching Boys with Boys, Girls with Girls
   const [genderFilter, setGenderFilter] = useState<'male' | 'female' | 'all'>('male');
@@ -109,6 +113,7 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(async () => {
+    clearGmailAccessToken();
     try {
       await signOut(auth);
     } finally {
@@ -116,6 +121,7 @@ export default function App() {
       setAllCandidates([]);
       setMatchRecords([]);
       setActiveChatCandidate(null);
+      setGmailPrefill(null);
       setCurrentTab('discover');
     }
   }, []);
@@ -148,6 +154,19 @@ export default function App() {
       });
       setActiveChatCandidate(candidate);
       setCurrentTab('matches');
+    },
+    [currentUser]
+  );
+
+  const handleEmailInvite = useCallback(
+    (candidate: FlatmateCandidate) => {
+      if (!currentUser) return;
+      setGmailPrefill({
+        to: '',
+        subject: `ROOMIE Flatmate Visit — ${candidate.area}, ${candidate.city}`,
+        body: `Hi ${candidate.name},\n\nWe matched on ROOMIE! I'm ${currentUser.name} (${currentUser.hasFlat === 'has_flat' ? 'I have a flat' : 'looking for a flat'} in ${currentUser.flatLocation.area}, ${currentUser.flatLocation.city}).\n\nWould you like to schedule a quick call or flat visit this week?\n\nBest,\n${currentUser.name}`,
+      });
+      setCurrentTab('gmail');
     },
     [currentUser]
   );
@@ -247,6 +266,15 @@ export default function App() {
                 matchRecords={matchRecords}
                 initialChatCandidate={activeChatCandidate}
                 onExploreMore={() => setCurrentTab('discover')}
+                onEmailInvite={handleEmailInvite}
+              />
+            )}
+
+            {currentTab === 'gmail' && (
+              <GmailView
+                currentUser={currentUser}
+                prefillCompose={gmailPrefill}
+                onConsumePrefill={() => setGmailPrefill(null)}
               />
             )}
 
