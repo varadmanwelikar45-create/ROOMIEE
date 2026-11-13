@@ -15,6 +15,7 @@ import {
   Camera,
   Loader2,
   LogOut,
+  ExternalLink,
 } from 'lucide-react';
 import { UserProfile, Gender, FlatStatus } from '../types';
 import { compressImageFile } from '../utils/storage';
@@ -44,6 +45,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   // Auth loading & error state
   const [authLoading, setAuthLoading] = useState(false);
   const [signinError, setSigninError] = useState('');
+  const [showNewTabHint, setShowNewTabHint] = useState(false);
 
   // Register fields (populated once Google Auth succeeds for a new user)
   const [name, setName] = useState('');
@@ -121,7 +123,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const handleGoogleAuth = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (authLoading) return;
     setSigninError('');
+    setShowNewTabHint(false);
 
     if (!area.trim()) {
       setSigninError('Please enter the location/area of your flat before continuing.');
@@ -129,16 +133,57 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
 
     setAuthLoading(true);
+    let signedInUser: FirebaseUser;
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      const signedInUser = result.user;
+      signedInUser = result.user;
+    } catch (err) {
+      console.error('Google Sign-In error:', err);
+      const code = (err as { code?: string })?.code || '';
+      const rawMessage = err instanceof Error ? err.message : '';
+      const inIframe = typeof window !== 'undefined' && window.self !== window.top;
 
-      if (!signedInUser.emailVerified) {
-        setSigninError('Please use a verified Google account to access ROOMIE.');
-        setAuthLoading(false);
-        return;
+      if (code === 'auth/popup-closed-by-user') {
+        setSigninError('Sign-in popup was closed before completing login. Please try again.');
+      } else if (code === 'auth/cancelled-popup-request') {
+        setSigninError('Sign-in request was cancelled. Please click once and complete the Google sign-in window.');
+      } else if (code === 'auth/popup-blocked') {
+        setSigninError('Pop-up was blocked by your browser. Please allow pop-ups for this site and try again.');
+        if (inIframe) setShowNewTabHint(true);
+      } else if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setSigninError(
+          `This domain (${host}) is not authorized for Google Sign-In. Please open the app from the authorized preview URL.`
+        );
+      } else if (code === 'auth/operation-not-allowed') {
+        setSigninError('Google Sign-In is currently disabled in Firebase Authentication settings.');
+      } else if (code === 'auth/internal-error' || code === 'auth/web-storage-unsupported') {
+        setSigninError(
+          'Your browser blocked Google Sign-In storage inside this embedded frame. Allow third-party cookies or open the app in a new tab.'
+        );
+        if (inIframe) setShowNewTabHint(true);
+      } else if (code === 'auth/network-request-failed') {
+        setSigninError(
+          'Network error reaching Google Sign-In. Please check your connection or ad-blocker and try again.'
+        );
+        if (inIframe) setShowNewTabHint(true);
+      } else {
+        setSigninError(
+          `Google Sign-In error (${code || 'auth-error'}): ${rawMessage || 'Please try again.'}`
+        );
+        if (inIframe) setShowNewTabHint(true);
       }
+      setAuthLoading(false);
+      return;
+    }
 
+    if (!signedInUser.emailVerified) {
+      setSigninError('Please use a verified Google account to access ROOMIE.');
+      setAuthLoading(false);
+      return;
+    }
+
+    try {
       // Check if this user already has a profile in Firestore
       const existingProfile = await loadUserProfileFromDb(signedInUser.uid);
       if (existingProfile) {
@@ -160,15 +205,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         setEmail(signedInUser.email || '');
         setRegisterStep(1);
       }
-    } catch (err) {
-      const code = (err as { code?: string })?.code || '';
-      if (code === 'auth/popup-closed-by-user') {
-        setSigninError('Sign-in popup was closed. Please try again.');
-      } else if (code === 'auth/popup-blocked') {
-        setSigninError('Pop-up was blocked by your browser. Please allow pop-ups and try again.');
-      } else {
-        setSigninError('Google Sign-In failed. Please check your connection and try again.');
-      }
+    } catch (dbErr) {
+      console.error('Database check error after sign-in:', dbErr);
+      setSigninError(
+        'Signed in with Google, but failed to load your ROOMIE database profile. Please try again.'
+      );
     } finally {
       setAuthLoading(false);
     }
@@ -413,9 +454,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 </div>
 
                 {signinError && (
-                  <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
-                    {signinError}
-                  </p>
+                  <div className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800 space-y-2">
+                    <p>{signinError}</p>
+                    {showNewTabHint && typeof window !== 'undefined' && (
+                      <a
+                        href={window.location.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[#FFD43B] font-bold hover:underline"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open App in New Tab to Sign In</span>
+                      </a>
+                    )}
+                  </div>
                 )}
 
                 <button

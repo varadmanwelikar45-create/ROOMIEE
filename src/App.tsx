@@ -40,6 +40,7 @@ export default function App() {
 
   // 1. Observe Firebase Authentication state first (Auth Guard)
   useEffect(() => {
+    let initialLoad = true;
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (!fbUser || !fbUser.emailVerified) {
@@ -48,14 +49,17 @@ export default function App() {
         setMatchRecords([]);
         setProfileLoading(false);
         setAuthReady(true);
+        initialLoad = false;
         return;
       }
 
-      setProfileLoading(true);
+      if (initialLoad) {
+        setProfileLoading(true);
+      }
       try {
         const profile = await loadUserProfileFromDb(fbUser.uid);
         if (profile) {
-          setCurrentUser(profile);
+          setCurrentUser((prev) => prev || profile);
           setGenderFilter(
             profile.preferredFlatmateGender === 'any' ? 'all' : profile.preferredFlatmateGender
           );
@@ -68,6 +72,7 @@ export default function App() {
       } finally {
         setProfileLoading(false);
         setAuthReady(true);
+        initialLoad = false;
       }
     });
 
