@@ -153,7 +153,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       } else if (code === 'auth/unauthorized-domain') {
         const host = typeof window !== 'undefined' ? window.location.hostname : '';
         setSigninError(
-          `This domain (${host}) is not authorized for Google Sign-In. Please open the app from the authorized preview URL.`
+          `This domain (${host}) is not listed in Firebase Authorized Domains. Add "${host}" in Firebase Console → Authentication → Settings → Authorized domains, or use the pre-authorized AI Studio app URL.`
         );
       } else if (code === 'auth/operation-not-allowed') {
         setSigninError('Google Sign-In is currently disabled in Firebase Authentication settings.');
