@@ -1,0 +1,352 @@
+{
+  "entities": {
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Public flatmate discovery profile visible to other verified ROOMIE users (no PII such as email or phone).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Display name of the flatmate."
+        },
+        "age": {
+          "type": "number",
+          "description": "Age in years."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female", "other"],
+          "description": "User gender for same-gender or open flatmate matching."
+        },
+        "preferredFlatmateGender": {
+          "type": "string",
+          "enum": ["male", "female", "any"],
+          "description": "Preferred flatmate gender."
+        },
+        "profession": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Primary skill or profession."
+        },
+        "hasFlat": {
+          "type": "string",
+          "enum": ["has_flat", "needs_flat"],
+          "description": "Whether the user already has a flat or is looking for one."
+        },
+        "city": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "City name."
+        },
+        "area": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Neighborhood or flat locality."
+        },
+        "budget": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "description": "Monthly rent budget."
+        },
+        "photos": {
+          "type": "array",
+          "description": "Compressed real photo URLs or data URLs (1 to 2 photos)."
+        },
+        "skills": {
+          "type": "array",
+          "description": "Up to 10 user skills."
+        },
+        "hobbies": {
+          "type": "array",
+          "description": "Up to 10 hobbies."
+        },
+        "interests": {
+          "type": "array",
+          "description": "Up to 10 interests."
+        },
+        "sleepSchedule": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Sleeping schedule preference."
+        },
+        "kitchenDiet": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Diet and kitchen preference."
+        },
+        "workRoutine": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Work from home or office schedule."
+        },
+        "cleanliness": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Cleanliness expectation."
+        },
+        "smoking": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 50,
+          "description": "Smoking preference."
+        },
+        "pets": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 50,
+          "description": "Pet preference."
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Short personal bio and flatmate expectations."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether this profile is active in discovery."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "name",
+        "age",
+        "gender",
+        "preferredFlatmateGender",
+        "profession",
+        "hasFlat",
+        "city",
+        "area",
+        "budget",
+        "photos",
+        "skills",
+        "hobbies",
+        "interests",
+        "sleepSchedule",
+        "kitchenDiet",
+        "workRoutine",
+        "cleanliness",
+        "smoking",
+        "pets",
+        "bio",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PrivateUserInfo": {
+      "title": "PrivateUserInfo",
+      "description": "Owner-only PII document holding private contact details (email and phone).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase Auth UID."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120,
+          "description": "Private email address."
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 25,
+          "description": "Private phone number."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["uid", "email", "phone", "createdAt", "updatedAt"]
+    },
+    "Swipe": {
+      "title": "Swipe",
+      "description": "Tracks flatmate discovery swipe actions (like, super, pass) between two users.",
+      "type": "object",
+      "properties": {
+        "fromUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the user performing the swipe."
+        },
+        "toUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the target flatmate profile."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["like", "super", "pass"],
+          "description": "Swipe action type."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["fromUid", "toUid", "action", "createdAt"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Represents a Roomie connection between two real users so both can see each other and chat.",
+      "type": "object",
+      "properties": {
+        "matchId": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 260,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deterministic sorted pair ID (userA_userB)."
+        },
+        "userA": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Lexicographically smaller user UID."
+        },
+        "userB": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Lexicographically larger user UID."
+        },
+        "initiatedBy": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of user who initiated the connection."
+        },
+        "isSuper": {
+          "type": "boolean",
+          "description": "Whether initiated via Super Roomie."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "archived"],
+          "description": "Current status of the match."
+        },
+        "lastMessage": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Latest chat snippet."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "matchId",
+        "userA",
+        "userB",
+        "initiatedBy",
+        "isSuper",
+        "status",
+        "lastMessage",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time flatmate message inside a match conversation.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the message sender."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Message body."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when message was sent."
+        }
+      },
+      "required": ["senderUid", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public flatmate discovery profiles so verified users can see each other."
+    },
+    "/users_private/{userId}": {
+      "schema": { "$ref": "#/entities/PrivateUserInfo" },
+      "description": "Owner-only private PII contact information."
+    },
+    "/swipes/{swipeId}": {
+      "schema": { "$ref": "#/entities/Swipe" },
+      "description": "User swipe history for discovery filtering."
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/Match" },
+      "description": "Active Roomie connections between pairs of users."
+    },
+    "/matches/{matchId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time messages exchanged between matched flatmates."
+    }
+  }
+}

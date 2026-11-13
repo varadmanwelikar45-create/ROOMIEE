@@ -1,0 +1,307 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== GLOBAL PRIMITIVES ====================
+    function isValidId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidStringList(arr, minItems, maxItems, maxItemLen) {
+      return arr is list
+        && arr.size() >= minItems
+        && arr.size() <= maxItems
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxItemLen));
+    }
+
+    function isValidPhotoList(arr) {
+      return arr is list
+        && arr.size() >= 1
+        && arr.size() <= 2
+        && arr[0] is string
+        && arr[0].size() >= 10
+        && arr[0].size() <= 350000
+        && (arr.size() < 2 || (arr[1] is string && arr[1].size() >= 10 && arr[1].size() <= 350000));
+    }
+
+    // ==================== VALIDATION BLUEPRINTS ====================
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+          'uid', 'name', 'age', 'gender', 'preferredFlatmateGender',
+          'profession', 'hasFlat', 'city', 'area', 'budget',
+          'photos', 'skills', 'hobbies', 'interests',
+          'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
+          'smoking', 'pets', 'bio', 'isActive', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'name', 'age', 'gender', 'preferredFlatmateGender',
+          'profession', 'hasFlat', 'city', 'area', 'budget',
+          'photos', 'skills', 'hobbies', 'interests',
+          'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
+          'smoking', 'pets', 'bio', 'isActive', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && isValidString(data.name, 2, 80)
+        && data.age is number && data.age >= 18 && data.age <= 99
+        && data.gender in ['male', 'female', 'other']
+        && data.preferredFlatmateGender in ['male', 'female', 'any']
+        && isValidString(data.profession, 1, 80)
+        && data.hasFlat in ['has_flat', 'needs_flat']
+        && isValidString(data.city, 2, 60)
+        && isValidString(data.area, 2, 100)
+        && isValidString(data.budget, 2, 40)
+        && isValidPhotoList(data.photos)
+        && isValidStringList(data.skills, 1, 10, 60)
+        && isValidStringList(data.hobbies, 0, 10, 60)
+        && isValidStringList(data.interests, 0, 10, 60)
+        && isValidString(data.sleepSchedule, 2, 80)
+        && isValidString(data.kitchenDiet, 2, 80)
+        && isValidString(data.workRoutine, 2, 80)
+        && isValidString(data.cleanliness, 2, 100)
+        && isValidString(data.smoking, 2, 50)
+        && isValidString(data.pets, 2, 50)
+        && isValidString(data.bio, 1, 500)
+        && data.isActive is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPrivateUserInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'phone', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'phone', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && isValidString(data.email, 3, 120)
+        && isValidString(data.phone, 6, 25)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSwipe(data) {
+      return data.keys().hasAll(['fromUid', 'toUid', 'action', 'createdAt'])
+        && data.keys().hasOnly(['fromUid', 'toUid', 'action', 'createdAt'])
+        && isValidId(data.fromUid)
+        && isValidId(data.toUid)
+        && data.fromUid == request.auth.uid
+        && data.toUid != request.auth.uid
+        && data.action in ['like', 'super', 'pass']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll([
+          'matchId', 'userA', 'userB', 'initiatedBy',
+          'isSuper', 'status', 'lastMessage', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'matchId', 'userA', 'userB', 'initiatedBy',
+          'isSuper', 'status', 'lastMessage', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.matchId)
+        && isValidId(data.userA)
+        && isValidId(data.userB)
+        && data.userA < data.userB
+        && data.matchId == (data.userA + '_' + data.userB)
+        && isValidId(data.initiatedBy)
+        && (data.initiatedBy == data.userA || data.initiatedBy == data.userB)
+        && data.isSuper is bool
+        && data.status in ['active', 'archived']
+        && isValidString(data.lastMessage, 0, 500)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['senderUid', 'userA', 'userB', 'text', 'createdAt'])
+        && data.keys().hasOnly(['senderUid', 'userA', 'userB', 'text', 'createdAt'])
+        && isValidId(data.senderUid)
+        && isValidId(data.userA)
+        && isValidId(data.userB)
+        && data.senderUid == request.auth.uid
+        && (data.senderUid == data.userA || data.senderUid == data.userB)
+        && isValidString(data.text, 1, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    // ==================== 1. PUBLIC DISCOVERY PROFILES ====================
+    match /profiles/{userId} {
+      allow get: if isVerifiedUser()
+        && isValidId(userId)
+        && (isOwner(userId) || existing().isActive == true);
+
+      allow list: if isVerifiedUser()
+        && resource.data.isActive == true;
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPublicProfile(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPublicProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'age', 'gender', 'preferredFlatmateGender',
+          'profession', 'hasFlat', 'city', 'area', 'budget',
+          'photos', 'skills', 'hobbies', 'interests',
+          'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
+          'smoking', 'pets', 'bio', 'isActive', 'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
+    }
+
+    // ==================== 2. PRIVATE PII CONTACTS ====================
+    match /users_private/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
+      allow list: if isVerifiedUser() && resource.data.uid == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPrivateUserInfo(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPrivateUserInfo(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'updatedAt']);
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
+    }
+
+    // ==================== 3. SWIPE INTERACTIONS ====================
+    match /swipes/{swipeId} {
+      allow get: if isVerifiedUser()
+        && isValidId(swipeId)
+        && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid);
+
+      allow list: if isVerifiedUser()
+        && resource.data.fromUid == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(swipeId)
+        && isValidSwipe(incoming())
+        && swipeId == (request.auth.uid + '_' + incoming().toUid)
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(incoming().toUid));
+
+      allow update: if false;
+      allow delete: if isVerifiedUser()
+        && isValidId(swipeId)
+        && existing().fromUid == request.auth.uid;
+    }
+
+    // ==================== 4. ROOMIE MATCHES & CHAT ====================
+    match /matches/{matchId} {
+      allow get: if isVerifiedUser()
+        && isValidId(matchId)
+        && (existing().userA == request.auth.uid || existing().userB == request.auth.uid);
+
+      allow list: if isVerifiedUser()
+        && (resource.data.userA == request.auth.uid || resource.data.userB == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && incoming().matchId == matchId
+        && (incoming().userA == request.auth.uid || incoming().userB == request.auth.uid)
+        && incoming().initiatedBy == request.auth.uid
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(incoming().userA))
+        && exists(/databases/$(database)/documents/profiles/$(incoming().userB));
+
+      allow update: if isVerifiedUser()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && (existing().userA == request.auth.uid || existing().userB == request.auth.uid)
+        && existing().status == 'active'
+        && incoming().matchId == existing().matchId
+        && incoming().userA == existing().userA
+        && incoming().userB == existing().userB
+        && incoming().initiatedBy == existing().initiatedBy
+        && incoming().isSuper == existing().isSuper
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update last message preview
+          (incoming().status == 'active' && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt'])) ||
+          // Action: Archive conversation
+          (incoming().status == 'archived' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+
+      allow delete: if false;
+
+      // Master Gate Subcollection: Real-Time Messages
+      match /messages/{messageId} {
+        allow get: if isVerifiedUser()
+          && isValidId(matchId)
+          && isValidId(messageId)
+          && (
+            get(/databases/$(database)/documents/matches/$(matchId)).data.userA == request.auth.uid ||
+            get(/databases/$(database)/documents/matches/$(matchId)).data.userB == request.auth.uid
+          );
+
+        allow list: if isVerifiedUser()
+          && (resource.data.userA == request.auth.uid || resource.data.userB == request.auth.uid);
+
+        allow create: if isVerifiedUser()
+          && isValidId(matchId)
+          && isValidId(messageId)
+          && isValidChatMessage(incoming())
+          && incoming().createdAt == request.time
+          && get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'active'
+          && incoming().userA == get(/databases/$(database)/documents/matches/$(matchId)).data.userA
+          && incoming().userB == get(/databases/$(database)/documents/matches/$(matchId)).data.userB;
+
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+  }
+}

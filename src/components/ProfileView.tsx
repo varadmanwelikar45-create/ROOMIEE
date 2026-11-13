@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   Mail, 
@@ -7,8 +7,6 @@ import {
   Heart, 
   Moon, 
   Utensils, 
-  Laptop, 
-  MapPin, 
   CheckCircle2, 
   Edit3, 
   Save, 
@@ -18,10 +16,11 @@ import {
   Upload
 } from 'lucide-react';
 import { UserProfile, FlatStatus } from '../types';
+import { compressImageFile } from '../utils/storage';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
-  onUpdateProfile: (updated: UserProfile) => void;
+  onUpdateProfile: (updated: UserProfile) => Promise<void> | void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateProfile }) => {
@@ -34,28 +33,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
   const [editedCity, setEditedCity] = useState(currentUser.flatLocation.city);
   const [editedHasFlat, setEditedHasFlat] = useState<FlatStatus>(currentUser.hasFlat);
   const [editedPhotos, setEditedPhotos] = useState<string[]>(currentUser.photos || []);
+  const [photoError, setPhotoError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    setEditedBio(currentUser.bio);
+    setEditedSleep(currentUser.lifestyle.sleepSchedule);
+    setEditedDiet(currentUser.lifestyle.kitchenDiet);
+    setEditedWork(currentUser.lifestyle.workRoutine);
+    setEditedArea(currentUser.flatLocation.area);
+    setEditedCity(currentUser.flatLocation.city);
+    setEditedHasFlat(currentUser.hasFlat);
+    setEditedPhotos(currentUser.photos || []);
+  }, [currentUser]);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please select a valid image file.');
+      return;
+    }
+    setPhotoError('');
+    try {
+      const dataUrl = await compressImageFile(file, 520, 0.72);
       setEditedPhotos([dataUrl, ...editedPhotos.slice(1)]);
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      setPhotoError('Could not process this image. Please try another PNG or JPG file.');
+    }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError('');
+    setIsSaving(true);
     const updated: UserProfile = {
       ...currentUser,
-      bio: editedBio,
+      bio: editedBio.trim() || currentUser.bio,
       hasFlat: editedHasFlat,
       flatLocation: {
-        city: editedCity,
-        area: editedArea,
+        city: editedCity.trim() || currentUser.flatLocation.city,
+        area: editedArea.trim() || currentUser.flatLocation.area,
       },
       photos: editedPhotos.length > 0 ? editedPhotos : currentUser.photos,
       lifestyle: {
@@ -65,10 +86,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
         workRoutine: editedWork,
       },
     };
-    onUpdateProfile(updated);
-    setIsEditing(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      await onUpdateProfile(updated);
+      setIsEditing(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch {
+      setSaveError('Could not save profile updates. Please verify your connection and try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -169,6 +196,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   />
                 </label>
               </div>
+              {photoError && (
+                <p className="text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800">
+                  {photoError}
+                </p>
+              )}
 
               {/* Flat Status Yes / No */}
               <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
@@ -224,7 +256,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
               </div>
 
               {/* Habits */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] text-[#B8B8B8] mb-1">Sleep Clock</label>
                   <input
@@ -243,6 +275,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                     className="w-full px-3 py-2 bg-[#242424] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
                   />
                 </div>
+                <div>
+                  <label className="block text-[11px] text-[#B8B8B8] mb-1">Work Routine</label>
+                  <input
+                    type="text"
+                    value={editedWork}
+                    onChange={(e) => setEditedWork(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#242424] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                  />
+                </div>
               </div>
 
               <div>
@@ -255,19 +296,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 />
               </div>
 
+              {saveError && (
+                <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
+                  {saveError}
+                </p>
+              )}
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsEditing(false)}
-                  className="px-4 py-2 text-xs bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] rounded-lg"
+                  className="px-4 py-2 text-xs bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] rounded-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-bold text-[#242424] bg-[#FFD43B] hover:bg-[#ffe066] rounded-lg shadow"
+                  disabled={isSaving}
+                  className="px-5 py-2 text-xs font-bold text-[#242424] bg-[#FFD43B] hover:bg-[#ffe066] rounded-lg shadow disabled:opacity-60 cursor-pointer"
                 >
-                  Save Changes
+                  {isSaving ? 'Saving to Cloud...' : 'Save Changes'}
                 </button>
               </div>
 

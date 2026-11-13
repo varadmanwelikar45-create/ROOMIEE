@@ -1,15 +1,17 @@
 import React from 'react';
 import { FlatmateCandidate } from '../types';
-import { Star, Heart, MapPin, Briefcase, Sparkles, Home, Search } from 'lucide-react';
+import { Star, Heart, MapPin, Briefcase, Home, Search, CheckCircle2 } from 'lucide-react';
 
 interface TopPicksViewProps {
   candidates: FlatmateCandidate[];
+  matchedIds?: string[];
   onConnectFlatmate: (candidate: FlatmateCandidate, isSuper: boolean) => void;
   onSelectCandidate: (candidate: FlatmateCandidate) => void;
 }
 
 export const TopPicksView: React.FC<TopPicksViewProps> = ({
   candidates,
+  matchedIds = [],
   onConnectFlatmate,
   onSelectCandidate,
 }) => {
@@ -58,13 +60,19 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
           >
             <div>
               {/* Photo Viewport */}
-              <div className="relative aspect-[4/4.5] w-full bg-[#242424] overflow-hidden">
-                <img
-                  src={candidate.photos[0]}
-                  alt={candidate.name}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="relative aspect-[4/4.5] w-full bg-[#242424] overflow-hidden flex items-center justify-center">
+                {candidate.photos && candidate.photos[0] ? (
+                  <img
+                    src={candidate.photos[0]}
+                    alt={candidate.name}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="text-5xl font-extrabold text-[#FFD43B]">
+                    {candidate.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
 
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30" />
 
@@ -122,26 +130,41 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
 
             {/* Quick Connect Action Bar */}
             <div className="p-3 pt-0 flex items-center gap-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConnectFlatmate(candidate, false);
-                }}
-                className="flex-1 py-2 px-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Heart className="w-3.5 h-3.5 fill-current" />
-                <span>Connect</span>
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConnectFlatmate(candidate, true);
-                }}
-                className="p-2 bg-[#383838] hover:bg-sky-500 hover:text-white text-sky-400 rounded-xl transition-colors cursor-pointer"
-                title="Super Roomie"
-              >
-                <Star className="w-4 h-4 fill-current" />
-              </button>
+              {matchedIds.includes(candidate.id) ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectCandidate(candidate);
+                  }}
+                  className="flex-1 py-2 px-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Connected · Chat</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onConnectFlatmate(candidate, false);
+                    }}
+                    className="flex-1 py-2 px-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Heart className="w-3.5 h-3.5 fill-current" />
+                    <span>Connect</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onConnectFlatmate(candidate, true);
+                    }}
+                    className="p-2 bg-[#383838] hover:bg-sky-500 hover:text-white text-sky-400 rounded-xl transition-colors cursor-pointer"
+                    title="Super Roomie"
+                  >
+                    <Star className="w-4 h-4 fill-current" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}

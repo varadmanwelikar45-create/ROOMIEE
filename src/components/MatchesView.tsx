@@ -1,71 +1,131 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FlatmateCandidate } from '../types';
-import { Send, MapPin, Briefcase, Phone, Home, Sparkles, Check } from 'lucide-react';
+import { Send, MapPin, Sparkles } from 'lucide-react';
+import {
+  FirestoreChatMessage,
+  FirestoreMatchRecord,
+  getMatchId,
+  sendMatchMessage,
+  subscribeToMatchMessages,
+} from '../services/roomieDb';
 
 interface MatchesViewProps {
+  currentUserId: string;
   matchedCandidates: FlatmateCandidate[];
+  matchRecords: FirestoreMatchRecord[];
   initialChatCandidate?: FlatmateCandidate | null;
   onExploreMore: () => void;
 }
 
 export const MatchesView: React.FC<MatchesViewProps> = ({
+  currentUserId,
   matchedCandidates,
+  matchRecords,
   initialChatCandidate,
   onExploreMore,
 }) => {
   const [selectedChat, setSelectedChat] = useState<FlatmateCandidate | null>(
     initialChatCandidate || (matchedCandidates.length > 0 ? matchedCandidates[0] : null)
   );
-
-  const [messages, setMessages] = useState<Record<string, { sender: 'me' | 'them'; text: string; time: string }[]>>({});
-
+  const [liveMessages, setLiveMessages] = useState<FirestoreChatMessage[]>([]);
   const [inputMsg, setInputMsg] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputMsg.trim() || !selectedChat) return;
+  useEffect(() => {
+    if (initialChatCandidate) {
+      setSelectedChat(initialChatCandidate);
+    } else if (!selectedChat && matchedCandidates.length > 0) {
+      setSelectedChat(matchedCandidates[0]);
+    } else if (
+      selectedChat &&
+      matchedCandidates.length > 0 &&
+      !matchedCandidates.some((c) => c.id === selectedChat.id)
+    ) {
+      setSelectedChat(matchedCandidates[0]);
+    }
+  }, [initialChatCandidate, matchedCandidates, selectedChat]);
 
-    const chatKey = selectedChat.id;
-    const newMsg = {
-      sender: 'me' as const,
-      text: inputMsg.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  const activeMatchPair = useMemo(() => {
+    if (!selectedChat || !currentUserId) return null;
+    const { matchId, userA, userB } = getMatchId(currentUserId, selectedChat.id);
+    const existingRecord = matchRecords.find((r) => r.matchId === matchId);
+    return {
+      matchId,
+      userA: existingRecord?.userA || userA,
+      userB: existingRecord?.userB || userB,
+      hasMatchRecord: Boolean(existingRecord),
     };
+  }, [selectedChat, currentUserId, matchRecords]);
 
-    setMessages((prev) => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newMsg],
-    }));
+  // Subscribe in real time to messages inside the active match conversation
+  useEffect(() => {
+    if (!activeMatchPair || !activeMatchPair.hasMatchRecord) {
+      setLiveMessages([]);
+      return;
+    }
 
+    const unsubscribe = subscribeToMatchMessages(
+      activeMatchPair.matchId,
+      currentUserId,
+      activeMatchPair.userA,
+      activeMatchPair.userB,
+      (msgs) => {
+        setLiveMessages(msgs);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeMatchPair, currentUserId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [liveMessages.length, selectedChat?.id]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputMsg.trim() || !selectedChat || !activeMatchPair || isSending) return;
+
+    const textToSend = inputMsg.trim();
+    setSendError('');
     setInputMsg('');
-
-    // Simulate instant reply from flatmate
-    setTimeout(() => {
-      const replyMsg = {
-        sender: 'them' as const,
-        text: `Sounds great! My flat is near ${selectedChat.area}. Let's connect on WhatsApp or visit the society anytime post 6 PM!`,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), replyMsg],
-      }));
-    }, 1200);
+    setIsSending(true);
+    try {
+      await sendMatchMessage(
+        activeMatchPair.matchId,
+        currentUserId,
+        activeMatchPair.userA,
+        activeMatchPair.userB,
+        textToSend
+      );
+    } catch {
+      setInputMsg(textToSend);
+      setSendError('Could not send message. Please try again.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  const activeMessages = selectedChat ? (messages[selectedChat.id] || [
-    { sender: 'them', text: `Hey there! We matched on ROOMIE. Loved your skills and habits. Are you looking in ${selectedChat.area}?`, time: 'Just now' }
-  ]) : [];
+  const formatTimestamp = (msg: FirestoreChatMessage) => {
+    try {
+      if (msg.createdAt && typeof msg.createdAt.toDate === 'function') {
+        return msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    } catch {
+      // ignore pending serverTimestamp format errors
+    }
+    return 'Sending...';
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6">
-      
       {matchedCandidates.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 bg-[#303030] border border-[#484848] rounded-3xl overflow-hidden shadow-2xl min-h-[580px]">
-          
           {/* Left Column: Matches row & Conversation List (5 cols) */}
           <div className="md:col-span-5 border-r border-[#3d3d3d] flex flex-col">
-            
             {/* Matches Carousel Row (Tinder Matches Row) */}
             <div className="p-4 border-b border-[#3d3d3d]">
               <div className="flex items-center justify-between mb-3">
@@ -83,14 +143,24 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       onClick={() => setSelectedChat(m)}
                       className="flex flex-col items-center gap-1 shrink-0 cursor-pointer group"
                     >
-                      <div className={`w-14 h-14 rounded-full p-0.5 border-2 transition-all ${
-                        isSelected ? 'border-[#FFD43B] scale-105 shadow-md' : 'border-[#484848] group-hover:border-white/50'
-                      }`}>
-                        <img
-                          src={m.photos[0]}
-                          alt={m.name}
-                          className="w-full h-full rounded-full object-cover"
-                        />
+                      <div
+                        className={`w-14 h-14 rounded-full p-0.5 border-2 transition-all bg-[#242424] flex items-center justify-center overflow-hidden ${
+                          isSelected
+                            ? 'border-[#FFD43B] scale-105 shadow-md'
+                            : 'border-[#484848] group-hover:border-white/50'
+                        }`}
+                      >
+                        {m.photos && m.photos[0] ? (
+                          <img
+                            src={m.photos[0]}
+                            alt={m.name}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-sm font-bold text-[#FFD43B]">
+                            {m.name.charAt(0).toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <span className="text-[11px] font-semibold text-[#F5F5F5] max-w-[60px] truncate">
                         {m.name.split(' ')[0]}
@@ -105,7 +175,10 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
             <div className="flex-1 overflow-y-auto divide-y divide-[#383838]">
               {matchedCandidates.map((m) => {
                 const isSelected = selectedChat?.id === m.id;
-                const lastMsg = (messages[m.id] && messages[m.id].slice(-1)[0]?.text) || `Matched in ${m.area}`;
+                const { matchId } = getMatchId(currentUserId, m.id);
+                const record = matchRecords.find((r) => r.matchId === matchId);
+                const lastMsg = record?.lastMessage?.trim() || `Matched in ${m.area}`;
+
                 return (
                   <button
                     key={m.id}
@@ -114,8 +187,14 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       isSelected ? 'bg-[#383838]' : 'hover:bg-[#343434]'
                     }`}
                   >
-                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-[#484848]">
-                      <img src={m.photos[0]} alt={m.name} className="w-full h-full object-cover" />
+                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border border-[#484848] bg-[#242424] flex items-center justify-center">
+                      {m.photos && m.photos[0] ? (
+                        <img src={m.photos[0]} alt={m.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-[#FFD43B]">
+                          {m.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
@@ -130,18 +209,27 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 );
               })}
             </div>
-
           </div>
 
           {/* Right Column: Active Chat View (7 cols) */}
-          <div className="md:col-span-7 flex flex-col justify-between bg-[#282828]">
+          <div className="md:col-span-7 flex flex-col justify-between bg-[#282828] max-h-[580px]">
             {selectedChat ? (
               <>
                 {/* Chat Top Bar */}
                 <div className="p-4 bg-[#303030] border-b border-[#3d3d3d] flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden border border-[#FFD43B]">
-                      <img src={selectedChat.photos[0]} alt={selectedChat.name} className="w-full h-full object-cover" />
+                    <div className="w-10 h-10 rounded-full overflow-hidden border border-[#FFD43B] bg-[#242424] flex items-center justify-center">
+                      {selectedChat.photos && selectedChat.photos[0] ? (
+                        <img
+                          src={selectedChat.photos[0]}
+                          alt={selectedChat.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-xs font-bold text-[#FFD43B]">
+                          {selectedChat.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-[#F5F5F5] flex items-center gap-1.5">
@@ -150,7 +238,9 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       </h4>
                       <p className="text-[11px] text-[#FFD43B] flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
-                        <span>{selectedChat.area} · {selectedChat.budget}</span>
+                        <span>
+                          {selectedChat.area} · {selectedChat.budget}
+                        </span>
                       </p>
                     </div>
                   </div>
@@ -164,31 +254,50 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 <div className="flex-1 p-4 overflow-y-auto space-y-3">
                   <div className="text-center my-2">
                     <span className="text-[10px] text-[#8e8e8e] bg-[#242424] px-3 py-1 rounded-full border border-[#3d3d3d]">
-                      Mutual Roomie Match · Both of you like {selectedChat.area}
+                      Roomie Match · Say hello to {selectedChat.name} in {selectedChat.area}
                     </span>
                   </div>
 
-                  {activeMessages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col ${msg.sender === 'me' ? 'items-end' : 'items-start'}`}
-                    >
-                      <div
-                        className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
-                          msg.sender === 'me'
-                            ? 'bg-[#FFD43B] text-[#242424] font-medium rounded-br-none'
-                            : 'bg-[#383838] text-[#F5F5F5] border border-[#484848] rounded-bl-none'
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                      <span className="text-[9px] text-[#6e6e6e] mt-1 px-1">{msg.time}</span>
+                  {liveMessages.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-[#8e8e8e]">
+                      No messages yet. Start a real conversation about rent split, move-in dates, or visiting the flat!
                     </div>
-                  ))}
+                  ) : (
+                    liveMessages.map((msg) => {
+                      const isMe = msg.senderUid === currentUserId;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        >
+                          <div
+                            className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed shadow-sm ${
+                              isMe
+                                ? 'bg-[#FFD43B] text-[#242424] font-medium rounded-br-none'
+                                : 'bg-[#383838] text-[#F5F5F5] border border-[#484848] rounded-bl-none'
+                            }`}
+                          >
+                            {msg.text}
+                          </div>
+                          <span className="text-[9px] text-[#6e6e6e] mt-1 px-1">
+                            {formatTimestamp(msg)}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
 
+                {sendError && (
+                  <p className="px-4 pb-1 text-[11px] text-red-400">{sendError}</p>
+                )}
+
                 {/* Input Bar */}
-                <form onSubmit={handleSendMessage} className="p-3 bg-[#303030] border-t border-[#3d3d3d] flex gap-2">
+                <form
+                  onSubmit={handleSendMessage}
+                  className="p-3 bg-[#303030] border-t border-[#3d3d3d] flex gap-2"
+                >
                   <input
                     type="text"
                     value={inputMsg}
@@ -198,7 +307,8 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                   />
                   <button
                     type="submit"
-                    className="px-4 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all cursor-pointer shadow flex items-center justify-center"
+                    disabled={isSending || !inputMsg.trim()}
+                    className="px-4 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all cursor-pointer shadow flex items-center justify-center disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
                   </button>
@@ -210,7 +320,6 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
               </div>
             )}
           </div>
-
         </div>
       ) : (
         /* Empty Matches State */
@@ -218,11 +327,9 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-[#383838] border border-[#484848] flex items-center justify-center text-[#FFD43B] mx-auto mb-4">
             <Sparkles className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-[#F5F5F5] mb-2">
-            No Roomie Matches Yet
-          </h3>
+          <h3 className="text-xl font-bold text-[#F5F5F5] mb-2">No Roomie Matches Yet</h3>
           <p className="text-xs text-[#B8B8B8] mb-6 leading-relaxed">
-            Swipe right on flatmates whose location and living habits align with yours to unlock instant chat!
+            Swipe right on flatmates whose location and living habits align with yours to unlock real-time chat!
           </p>
           <button
             onClick={onExploreMore}
@@ -232,7 +339,6 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
           </button>
         </div>
       )}
-
     </div>
   );
 };

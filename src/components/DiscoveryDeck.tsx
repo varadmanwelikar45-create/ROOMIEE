@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, 
   RotateCcw, 
@@ -13,8 +13,6 @@ import {
   Sparkles, 
   Moon, 
   Utensils, 
-  Laptop, 
-  ChevronUp, 
   CheckCircle2, 
   MessageSquare,
   Filter
@@ -25,6 +23,7 @@ interface DiscoveryDeckProps {
   candidates: FlatmateCandidate[];
   currentUser: UserProfile;
   onConnectFlatmate: (candidate: FlatmateCandidate, isSuper: boolean) => void;
+  onPassFlatmate?: (candidate: FlatmateCandidate) => void;
   onOpenChatWith: (candidate: FlatmateCandidate) => void;
   genderFilter: 'male' | 'female' | 'all';
   onGenderFilterChange: (filter: 'male' | 'female' | 'all') => void;
@@ -34,6 +33,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
   candidates,
   currentUser,
   onConnectFlatmate,
+  onPassFlatmate,
   onOpenChatWith,
   genderFilter,
   onGenderFilterChange,
@@ -45,6 +45,16 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
   const [matchedCandidate, setMatchedCandidate] = useState<FlatmateCandidate | null>(null);
   const [boostActive, setBoostActive] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const swipeTimerRef = useRef<number | null>(null);
+  const boostTimerRef = useRef<number | null>(null);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (swipeTimerRef.current) window.clearTimeout(swipeTimerRef.current);
+      if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
+    };
+  }, []);
 
   // Filter candidates according to gender preference (Boy matches with Boy, Girl with Girl)
   const filteredCandidates = candidates.filter((c) => {
@@ -61,51 +71,56 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
     setShowBioModal(false);
   }, [currentIndex]);
 
-  const handlePass = () => {
-    if (isDeckComplete || !currentCandidate) return;
+  const handlePass = useCallback(() => {
+    if (swipeAction || isDeckComplete || !currentCandidate) return;
+    const target = currentCandidate;
     setSwipeAction('left');
-    setTimeout(() => {
+    if (onPassFlatmate) onPassFlatmate(target);
+    swipeTimerRef.current = window.setTimeout(() => {
       setSwipeAction(null);
       setCurrentIndex((prev) => prev + 1);
     }, 240);
-  };
+  }, [swipeAction, isDeckComplete, currentCandidate, onPassFlatmate]);
 
-  const handleLike = () => {
-    if (isDeckComplete || !currentCandidate) return;
+  const handleLike = useCallback(() => {
+    if (swipeAction || isDeckComplete || !currentCandidate) return;
     setSwipeAction('right');
     const target = currentCandidate;
     onConnectFlatmate(target, false);
 
-    setTimeout(() => {
+    swipeTimerRef.current = window.setTimeout(() => {
       setSwipeAction(null);
       setMatchedCandidate(target);
       setCurrentIndex((prev) => prev + 1);
     }, 240);
-  };
+  }, [swipeAction, isDeckComplete, currentCandidate, onConnectFlatmate]);
 
-  const handleSuperLike = () => {
-    if (isDeckComplete || !currentCandidate) return;
+  const handleSuperLike = useCallback(() => {
+    if (swipeAction || isDeckComplete || !currentCandidate) return;
     setSwipeAction('super');
     const target = currentCandidate;
     onConnectFlatmate(target, true);
 
-    setTimeout(() => {
+    swipeTimerRef.current = window.setTimeout(() => {
       setSwipeAction(null);
       setMatchedCandidate(target);
       setCurrentIndex((prev) => prev + 1);
     }, 240);
-  };
+  }, [swipeAction, isDeckComplete, currentCandidate, onConnectFlatmate]);
 
   const handleRewind = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
-    }
+    if (swipeAction || currentIndex === 0) return;
+    setCurrentIndex((prev) => prev - 1);
   };
 
   const handleBoost = () => {
     setBoostActive(true);
     setToastMessage(`⚡ Profile Boosted! Your flat listing in ${currentUser.flatLocation.area} is prioritized.`);
-    setTimeout(() => setBoostActive(false), 5000);
+    if (boostTimerRef.current) window.clearTimeout(boostTimerRef.current);
+    boostTimerRef.current = window.setTimeout(() => {
+      setBoostActive(false);
+      setToastMessage(null);
+    }, 4500);
   };
 
   const handlePhotoTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -124,22 +139,35 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
   // Keyboard controls: Arrow Left (Pass), Arrow Right (Like), Arrow Up (Super Like)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
       if (showBioModal || matchedCandidate) return;
-      if (e.key === 'ArrowLeft') handlePass();
-      if (e.key === 'ArrowRight') handleLike();
-      if (e.key === 'ArrowUp') handleSuperLike();
-      if (e.key === ' ') setShowBioModal((prev) => !prev);
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePass();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleLike();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        handleSuperLike();
+      } else if (e.key === ' ' && !isDeckComplete && currentCandidate) {
+        e.preventDefault();
+        setShowBioModal((prev) => !prev);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, isDeckComplete, showBioModal, matchedCandidate]);
+  }, [handlePass, handleLike, handleSuperLike, showBioModal, matchedCandidate, isDeckComplete, currentCandidate]);
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-4 flex flex-col items-center select-none">
       
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-20 z-50 bg-[#303030] border border-[#FFD43B] text-[#F5F5F5] px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-4">
+        <div className="fixed top-20 z-50 bg-[#303030] border border-[#FFD43B] text-[#F5F5F5] px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-semibold transition-all duration-200">
           <Zap className="w-4 h-4 text-[#A855F7] fill-[#A855F7]" />
           <span>{toastMessage}</span>
         </div>
@@ -229,12 +257,18 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
               onClick={handlePhotoTap}
               className="relative w-full h-full cursor-pointer overflow-hidden"
             >
-              <img
-                src={currentCandidate.photos[photoIndex] || currentCandidate.photos[0]}
-                alt={currentCandidate.name}
-                className="w-full h-full object-cover object-center"
-                referrerPolicy="no-referrer"
-              />
+              {currentCandidate.photos && currentCandidate.photos.length > 0 ? (
+                <img
+                  src={currentCandidate.photos[photoIndex] || currentCandidate.photos[0]}
+                  alt={currentCandidate.name}
+                  className="w-full h-full object-cover object-center"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full bg-[#2a2a2a] flex items-center justify-center text-[#FFD43B] text-6xl font-extrabold">
+                  {currentCandidate.name.charAt(0).toUpperCase()}
+                </div>
+              )}
 
               {/* Gradient scrim for text readability */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-black/40 pointer-events-none" />
@@ -441,7 +475,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
 
       {/* FULL BIO DETAILS DRAWER / MODAL */}
       {showBioModal && currentCandidate && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm transition-opacity duration-150">
           <div className="relative w-full max-w-lg bg-[#303030] border border-[#484848] rounded-t-3xl sm:rounded-3xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl text-[#F5F5F5]">
             
             {/* Close button */}
@@ -569,7 +603,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
 
       {/* TINDER-STYLE MATCH CELEBRATION MODAL ("It's a Roomie Match!") */}
       {matchedCandidate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-opacity duration-200">
           <div className="relative w-full max-w-sm bg-[#303030] border border-[#FFD43B] rounded-3xl p-6 sm:p-8 text-center shadow-2xl text-[#F5F5F5]">
             
             <p className="text-xs font-bold uppercase tracking-widest text-[#FFD43B] mb-1">
@@ -581,19 +615,31 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
 
             {/* Two Overlapping Profile Photos */}
             <div className="flex items-center justify-center mb-6">
-              <div className="w-20 h-20 rounded-full border-4 border-[#FFD43B] overflow-hidden -mr-4 shadow-xl z-10 bg-[#242424]">
-                <img
-                  src={currentUser.photos[0] || ''}
-                  alt={currentUser.name}
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-20 h-20 rounded-full border-4 border-[#FFD43B] overflow-hidden -mr-4 shadow-xl z-10 bg-[#242424] flex items-center justify-center">
+                {currentUser.photos && currentUser.photos[0] ? (
+                  <img
+                    src={currentUser.photos[0]}
+                    alt={currentUser.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xl font-extrabold text-[#FFD43B]">
+                    {currentUser.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
               </div>
-              <div className="w-20 h-20 rounded-full border-4 border-emerald-400 overflow-hidden shadow-xl z-20 bg-[#242424]">
-                <img
-                  src={matchedCandidate.photos[0]}
-                  alt={matchedCandidate.name}
-                  className="w-full h-full object-cover"
-                />
+              <div className="w-20 h-20 rounded-full border-4 border-emerald-400 overflow-hidden shadow-xl z-20 bg-[#242424] flex items-center justify-center">
+                {matchedCandidate.photos && matchedCandidate.photos[0] ? (
+                  <img
+                    src={matchedCandidate.photos[0]}
+                    alt={matchedCandidate.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xl font-extrabold text-emerald-400">
+                    {matchedCandidate.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -608,7 +654,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
                   setMatchedCandidate(null);
                   onOpenChatWith(target);
                 }}
-                className="w-full py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md transition-all active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4" />
                 <span>Say Hello &amp; Plan Flat Visit</span>

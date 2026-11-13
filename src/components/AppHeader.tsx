@@ -30,7 +30,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               ROOMIE<span className="text-[#FFD43B]">.</span>
             </span>
             <span className="text-[10px] text-[#FFD43B] bg-[#303030] px-2 py-0.5 rounded-full font-bold border border-[#444444]">
-              {currentUser.gender === 'male' ? '👦 Boy' : '👧 Girl'}
+              {currentUser.gender === 'male' ? '👦 Boy' : currentUser.gender === 'female' ? '👧 Girl' : '👤 Roomie'}
             </span>
           </div>
 
@@ -104,7 +104,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <MessageSquare className="w-6 h-6 stroke-[2.2] fill-current" />
             <span className="text-[10px] font-bold">Matches</span>
             {matchesCount > 0 && (
-              <span className="absolute top-1 right-2 text-[10px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.2 rounded-full shadow">
+              <span className="absolute top-1 right-2 text-[10px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.5 rounded-full shadow leading-none">
                 {matchesCount}
               </span>
             )}

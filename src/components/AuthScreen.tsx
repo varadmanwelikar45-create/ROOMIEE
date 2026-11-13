@@ -1,30 +1,37 @@
-import React, { useState } from 'react';
-import { 
-  Users2, 
-  ArrowRight, 
-  Home, 
-  Search, 
-  MapPin, 
-  Mail, 
-  Lock, 
-  Phone, 
-  User, 
-  Sparkles, 
+import React, { useState, useEffect } from 'react';
+import { User as FirebaseUser, signInWithPopup } from 'firebase/auth';
+import {
+  Users2,
+  ArrowRight,
+  Home,
+  Search,
+  MapPin,
+  Mail,
+  Phone,
+  User,
   ShieldCheck,
   CheckCircle2,
   Upload,
   Camera,
-  X
+  Loader2,
+  LogOut,
 } from 'lucide-react';
-import { UserProfile, Gender, FlatStatus, FlatmateCandidate } from '../types';
+import { UserProfile, Gender, FlatStatus } from '../types';
+import { compressImageFile } from '../utils/storage';
+import { auth, googleProvider } from '../firebase';
+import { loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
 
 interface AuthScreenProps {
+  firebaseUser: FirebaseUser | null;
   onLoginSuccess: (user: UserProfile) => void;
-  registeredUsersCount: number;
+  onSignOutAuth: () => Promise<void>;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, registeredUsersCount }) => {
-  const [mode, setMode] = useState<'signin' | 'register'>('signin');
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  firebaseUser,
+  onLoginSuccess,
+  onSignOutAuth,
+}) => {
   const [registerStep, setRegisterStep] = useState<1 | 2>(1);
 
   // Common Flat Status & Location (required at login/register)
@@ -34,27 +41,28 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
   const [gender, setGender] = useState<Gender>('male');
   const [preferredFlatmateGender, setPreferredFlatmateGender] = useState<'male' | 'female' | 'any'>('male');
 
-  // Sign in fields
-  const [signinIdentifier, setSigninIdentifier] = useState('');
-  const [signinPassword, setSigninPassword] = useState('password123');
+  // Auth loading & error state
+  const [authLoading, setAuthLoading] = useState(false);
   const [signinError, setSigninError] = useState('');
 
-  // Register fields
+  // Register fields (populated once Google Auth succeeds for a new user)
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [budget, setBudget] = useState('₹18,000 / mo');
+  const [step1Error, setStep1Error] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Skills, Hobbies, Interests
-  const [selectedSkills, setSelectedSkills] = useState<string[]>(['Frontend Developer', 'UI/UX Design']);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(['Frontend Engineer', 'UI/UX Designer']);
   const [customSkill, setCustomSkill] = useState('');
-  const [selectedHobbies, setSelectedHobbies] = useState<string[]>(['Weekend Treks', 'Specialty Coffee', 'Gym']);
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(['Tech Startups', 'Board Games']);
+  const defaultHobbies = ['Weekend Treks', 'Specialty Coffee', 'Gym'];
+  const defaultInterests = ['Tech Startups', 'Board Games'];
   const [sleepSchedule, setSleepSchedule] = useState('11:00 PM – 7:00 AM (Early Riser)');
   const [kitchenDiet, setKitchenDiet] = useState('Vegetarian Friendly');
   const [workRoutine, setWorkRoutine] = useState('Hybrid (WFH 2 days/week)');
-  const [cleanliness, setCleanliness] = useState('Daily kitchen cleanup & shared maid');
+  const defaultCleanliness = 'Daily kitchen cleanup & shared maid';
   const [bio, setBio] = useState('');
 
   // Photo upload states (Required for registration)
@@ -62,9 +70,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
   const [uploadedFlatPhoto, setUploadedFlatPhoto] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState('');
 
-  // Handle local image file upload & convert to base64 Data URL
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, isFlatPhoto = false) => {
+  // Prefill name and email when Google user is authenticated and completing registration
+  useEffect(() => {
+    if (firebaseUser) {
+      setName((prev) => prev || firebaseUser.displayName || '');
+      setEmail(firebaseUser.email || '');
+    } else {
+      setRegisterStep(1);
+    }
+  }, [firebaseUser]);
+
+  // Handle local image file upload & compress to fit Firestore document & security rule limits
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, isFlatPhoto = false) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
@@ -72,22 +91,26 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
-      setPhotoError('Image size should be under 8MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setPhotoError('Image size should be under 10MB.');
       return;
     }
 
     setPhotoError('');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    try {
+      const compressedDataUrl = await compressImageFile(file, 520, 0.72);
       if (isFlatPhoto) {
-        setUploadedFlatPhoto(dataUrl);
+        setUploadedFlatPhoto(compressedDataUrl);
       } else {
-        setUploadedPhoto(dataUrl);
+        setUploadedPhoto(compressedDataUrl);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      setPhotoError(
+        err instanceof Error
+          ? err.message
+          : 'Could not process this image. Please try another PNG or JPG file.'
+      );
+    }
   };
 
   // Update preferred flatmate gender when user gender changes (Boy matches with Boy, Girl with Girl)
@@ -96,100 +119,98 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
     setPreferredFlatmateGender(newGender === 'male' ? 'male' : 'female');
   };
 
-  const handleSignIn = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleAuth = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setSigninError('');
 
-    if (!signinIdentifier.trim()) {
-      setSigninError('Please enter your registered email or phone.');
-      return;
-    }
-
     if (!area.trim()) {
-      setSigninError('Please enter the location/area of your flat.');
+      setSigninError('Please enter the location/area of your flat before continuing.');
       return;
     }
 
-    // Check if user was previously registered in community pool
-    const communityRaw = localStorage.getItem('roomie_community_candidates');
-    let matchedProfile: UserProfile | null = null;
-    if (communityRaw) {
-      try {
-        const parsed: FlatmateCandidate[] = JSON.parse(communityRaw);
-        const match = parsed.find(
-          c => c.name.toLowerCase() === signinIdentifier.trim().toLowerCase() ||
-               c.area.toLowerCase() === area.trim().toLowerCase() ||
-               c.id.includes(signinIdentifier.trim().toLowerCase())
-        );
-        if (match) {
-          matchedProfile = {
-            id: match.id,
-            name: match.name,
-            email: `${match.name.toLowerCase().replace(/\s+/g, '')}@example.com`,
-            phone: '+91 98765 43210',
-            gender: match.gender,
-            preferredFlatmateGender: match.gender === 'male' ? 'male' : 'female',
-            hasFlat: match.hasFlat,
-            flatLocation: {
-              city: match.city,
-              area: match.area,
-            },
-            budget: match.budget,
-            skills: match.skills,
-            hobbies: match.hobbies,
-            interests: match.interests,
-            lifestyle: match.lifestyle,
-            bio: match.bio,
-            photos: match.photos,
-            registeredAt: new Date().toISOString(),
-          };
-        }
-      } catch {
-        // Fallback
+    setAuthLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const signedInUser = result.user;
+
+      if (!signedInUser.emailVerified) {
+        setSigninError('Please use a verified Google account to access ROOMIE.');
+        setAuthLoading(false);
+        return;
       }
-    }
 
-    if (matchedProfile) {
-      onLoginSuccess(matchedProfile);
-      return;
-    }
-
-    // Check saved session
-    const savedSessionRaw = localStorage.getItem('roomie_user_session');
-    if (savedSessionRaw) {
-      try {
-        const savedUser: UserProfile = JSON.parse(savedSessionRaw);
-        if (savedUser.name.toLowerCase() === signinIdentifier.trim().toLowerCase() ||
-            savedUser.email.toLowerCase() === signinIdentifier.trim().toLowerCase()) {
-          onLoginSuccess(savedUser);
-          return;
-        }
-      } catch {
-        // Fallback
+      // Check if this user already has a profile in Firestore
+      const existingProfile = await loadUserProfileFromDb(signedInUser.uid);
+      if (existingProfile) {
+        const updatedProfile: UserProfile = {
+          ...existingProfile,
+          hasFlat,
+          flatLocation: {
+            city,
+            area: area.trim(),
+          },
+          gender,
+          preferredFlatmateGender,
+        };
+        await saveUserProfileToDb(updatedProfile);
+        onLoginSuccess(updatedProfile);
+      } else {
+        // New user -> proceed to mandatory photo & profile registration
+        setName(signedInUser.displayName || '');
+        setEmail(signedInUser.email || '');
+        setRegisterStep(1);
       }
+    } catch (err) {
+      const code = (err as { code?: string })?.code || '';
+      if (code === 'auth/popup-closed-by-user') {
+        setSigninError('Sign-in popup was closed. Please try again.');
+      } else if (code === 'auth/popup-blocked') {
+        setSigninError('Pop-up was blocked by your browser. Please allow pop-ups and try again.');
+      } else {
+        setSigninError('Google Sign-In failed. Please check your connection and try again.');
+      }
+    } finally {
+      setAuthLoading(false);
     }
-
-    // If no existing account was found with uploaded photo, prompt them to register
-    setSigninError('No existing account found. Please click "Register" below to upload your photo and set up your profile!');
   };
 
   const handleRegisterStep1 = (e: React.FormEvent) => {
     e.preventDefault();
     setPhotoError('');
+    setStep1Error('');
 
+    if (!area.trim()) {
+      setStep1Error('Please enter your flat location or preferred area.');
+      return;
+    }
+    if (!name.trim() || name.trim().length < 2) {
+      setStep1Error('Please enter your full name (at least 2 characters).');
+      return;
+    }
+    if (!phone.trim() || phone.trim().length < 6) {
+      setStep1Error('Please enter a valid phone number.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setStep1Error('Please enter a valid email address.');
+      return;
+    }
     if (!uploadedPhoto) {
-      setPhotoError('Please upload your photo to register. Real photo is required for flatmate discovery.');
+      setPhotoError('Please upload your photo to register. A real photo is required for flatmate discovery.');
       return;
     }
 
-    if (!name.trim() || !email.trim() || !password.trim() || !phone.trim() || !area.trim()) {
-      return;
-    }
     setRegisterStep(2);
   };
 
-  const handleFinalRegister = (e: React.FormEvent) => {
+  const handleFinalRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitError('');
+
+    if (!firebaseUser) {
+      setSubmitError('Authentication session expired. Please sign in with Google again.');
+      return;
+    }
 
     if (!uploadedPhoto) {
       setRegisterStep(1);
@@ -203,9 +224,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
     }
 
     const newUser: UserProfile = {
-      id: `user-${Date.now()}`,
+      id: firebaseUser.uid,
       name: name.trim(),
-      email: email.trim(),
+      email: (firebaseUser.email || email).trim(),
       phone: phone.trim(),
       gender,
       preferredFlatmateGender,
@@ -216,34 +237,46 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
       },
       budget,
       skills: selectedSkills.length > 0 ? selectedSkills : ['Software Engineering', 'Problem Solving'],
-      hobbies: selectedHobbies.length > 0 ? selectedHobbies : ['Reading', 'Gym & Fitness'],
-      interests: selectedInterests.length > 0 ? selectedInterests : ['Tech Startups', 'Music'],
+      hobbies: defaultHobbies,
+      interests: defaultInterests,
       lifestyle: {
         sleepSchedule,
         kitchenDiet,
         workRoutine,
-        cleanliness,
+        cleanliness: defaultCleanliness,
         smoking: 'Non-smoker',
         pets: 'Friendly with pets',
       },
-      bio: bio.trim() || `Hi, I am ${name.trim()}! Looking for a compatible ${preferredFlatmateGender} flatmate in ${area.trim()}, ${city}.`,
+      bio:
+        bio.trim() ||
+        `Hi, I am ${name.trim()}! Looking for a compatible ${preferredFlatmateGender} flatmate in ${area.trim()}, ${city}.`,
       photos: photoList,
       registeredAt: new Date().toISOString(),
     };
 
-    onLoginSuccess(newUser);
+    setIsSavingProfile(true);
+    try {
+      await saveUserProfileToDb(newUser);
+      onLoginSuccess(newUser);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error && !err.message.startsWith('{')
+          ? err.message
+          : 'Could not save your profile to the database. Please try again.'
+      );
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-
+  const isRegistrationMode = Boolean(firebaseUser);
 
   return (
     <div className="flex-1 flex flex-col justify-center py-10 pb-20 sm:pb-12 px-4 sm:px-6 lg:px-8 relative z-10">
-      
       {/* Background glow */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[380px] bg-[#FFD43B]/6 rounded-full blur-3xl pointer-events-none" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-xl relative z-10">
-        
         {/* ROOMIE Header */}
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center gap-2.5 mb-2">
@@ -258,211 +291,187 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
 
         {/* Auth Box */}
         <div className="bg-[#303030] border border-[#484848] rounded-3xl shadow-2xl p-6 sm:p-8">
-          
-          {/* ===================== SIGN IN ===================== */}
-          {mode === 'signin' && (
+          {/* ===================== SIGN IN LANDING ===================== */}
+          {!isRegistrationMode && (
             <div>
               <div className="mb-6">
                 <h2 className="text-2xl font-extrabold text-[#F5F5F5] tracking-tight">
                   Log in to ROOMIE
                 </h2>
                 <p className="text-xs text-[#B8B8B8] mt-1">
-                  Enter your credentials and flat location to find compatible flatmates.
+                  Enter your flat status and location, then sign in with Google to see real flatmates live.
                 </p>
               </div>
 
-              <form onSubmit={handleSignIn} className="space-y-4">
-              
-              {/* 1. DO YOU HAVE A FLAT? (YES / NO) */}
-              <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2 flex items-center gap-1.5">
-                  <Home className="w-4 h-4 text-[#FFD43B]" />
-                  <span>Do you have a flat already?</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setHasFlat('has_flat')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      hasFlat === 'has_flat'
-                        ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] shadow-md'
-                        : 'bg-[#303030] text-[#B8B8B8] border-[#444444] hover:text-[#F5F5F5]'
-                    }`}
-                  >
-                    <span>🏠 Yes, I have a flat</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setHasFlat('needs_flat')}
-                    className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      hasFlat === 'needs_flat'
-                        ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] shadow-md'
-                        : 'bg-[#303030] text-[#B8B8B8] border-[#444444] hover:text-[#F5F5F5]'
-                    }`}
-                  >
-                    <span>🔍 No, looking for flat</span>
-                  </button>
-                </div>
-                <p className="text-[11px] text-[#8e8e8e] mt-2">
-                  {hasFlat === 'has_flat'
-                    ? 'You have a room/flat and are seeking a compatible flatmate to move in.'
-                    : 'You are searching for a room or looking to team up to rent a new flat together.'}
-                </p>
-              </div>
-
-              {/* 2. FLAT LOCATION & CITY */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#B8B8B8] mb-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-[#FFD43B]" />
-                    <span>City</span>
+              <form onSubmit={handleGoogleAuth} className="space-y-4">
+                {/* 1. DO YOU HAVE A FLAT? (YES / NO) */}
+                <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2 flex items-center gap-1.5">
+                    <Home className="w-4 h-4 text-[#FFD43B]" />
+                    <span>Do you have a flat already?</span>
                   </label>
-                  <select
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] focus:outline-none focus:border-[#FFD43B]"
-                  >
-                    <option value="Bengaluru">Bengaluru</option>
-                    <option value="Mumbai">Mumbai</option>
-                    <option value="Delhi NCR">Delhi NCR</option>
-                    <option value="Pune">Pune</option>
-                    <option value="Hyderabad">Hyderabad</option>
-                    <option value="Chennai">Chennai</option>
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setHasFlat('has_flat')}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        hasFlat === 'has_flat'
+                          ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] shadow-md'
+                          : 'bg-[#303030] text-[#B8B8B8] border-[#444444] hover:text-[#F5F5F5]'
+                      }`}
+                    >
+                      <span>🏠 Yes, I have a flat</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setHasFlat('needs_flat')}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        hasFlat === 'needs_flat'
+                          ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] shadow-md'
+                          : 'bg-[#303030] text-[#B8B8B8] border-[#444444] hover:text-[#F5F5F5]'
+                      }`}
+                    >
+                      <span>🔍 No, looking for flat</span>
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#8e8e8e] mt-2">
+                    {hasFlat === 'has_flat'
+                      ? 'You have a room/flat and are seeking a compatible flatmate to move in.'
+                      : 'You are searching for a room or looking to team up to rent a new flat together.'}
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#B8B8B8] mb-1 flex items-center gap-1">
-                    <Search className="w-3.5 h-3.5 text-[#FFD43B]" />
-                    <span>Location / Area of Flat</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={area}
-                    onChange={(e) => setArea(e.target.value)}
-                    placeholder="e.g. Koramangala 4th Block"
-                    className="w-full px-3 py-2.5 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
-                  />
-                </div>
-              </div>
+                {/* 2. FLAT LOCATION & CITY */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#B8B8B8] mb-1 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-[#FFD43B]" />
+                      <span>City</span>
+                    </label>
+                    <select
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] focus:outline-none focus:border-[#FFD43B]"
+                    >
+                      <option value="Bengaluru">Bengaluru</option>
+                      <option value="Mumbai">Mumbai</option>
+                      <option value="Delhi NCR">Delhi NCR</option>
+                      <option value="Pune">Pune</option>
+                      <option value="Hyderabad">Hyderabad</option>
+                      <option value="Chennai">Chennai</option>
+                    </select>
+                  </div>
 
-              {/* 3. GENDER */}
-              <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
-                  Your Gender
-                </label>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleGenderChange('male')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      gender === 'male'
-                        ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
-                        : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
-                    }`}
-                  >
-                    <span>👦 I am a Boy</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleGenderChange('female')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      gender === 'female'
-                        ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
-                        : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
-                    }`}
-                  >
-                    <span>👧 I am a Girl</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 4. EMAIL OR PHONE + PASSWORD */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
-                    Email or Phone
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-[#8e8e8e] absolute left-3 top-3" />
+                  <div>
+                    <label className="block text-xs font-semibold text-[#B8B8B8] mb-1 flex items-center gap-1">
+                      <Search className="w-3.5 h-3.5 text-[#FFD43B]" />
+                      <span>Location / Area of Flat</span>
+                    </label>
                     <input
                       type="text"
-                      value={signinIdentifier}
-                      onChange={(e) => setSigninIdentifier(e.target.value)}
-                      placeholder="e.g. aditya@gmail.com"
-                      className="w-full pl-9 pr-3 py-2 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
+                      required
+                      value={area}
+                      onChange={(e) => setArea(e.target.value)}
+                      placeholder="e.g. Koramangala 4th Block"
+                      className="w-full px-3 py-2.5 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
-                    Password
+                {/* 3. GENDER */}
+                <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
+                    Your Gender
                   </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-[#8e8e8e] absolute left-3 top-3" />
-                    <input
-                      type="password"
-                      value={signinPassword}
-                      onChange={(e) => setSigninPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full pl-9 pr-3 py-2 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
-                    />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleGenderChange('male')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        gender === 'male'
+                          ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
+                          : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
+                      }`}
+                    >
+                      <span>👦 I am a Boy</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleGenderChange('female')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        gender === 'female'
+                          ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
+                          : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
+                      }`}
+                    >
+                      <span>👧 I am a Girl</span>
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              {signinError && (
-                <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
-                  {signinError}
-                </p>
-              )}
+                {signinError && (
+                  <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
+                    {signinError}
+                  </p>
+                )}
 
-              <button
-                type="submit"
-                className="w-full py-3.5 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-sm rounded-xl transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer mt-2"
-              >
-                <span>Log In &amp; Start Swapping Flatmates</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <div className="pt-4 border-t border-[#383838] text-center text-sm text-[#B8B8B8]">
-                <span>Don&apos;t have an account? </span>
                 <button
-                  type="button"
-                  onClick={() => { setMode('register'); setRegisterStep(1); }}
-                  className="text-[#FFD43B] hover:underline font-bold cursor-pointer transition-colors"
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full py-3.5 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-sm rounded-xl transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2.5 cursor-pointer mt-2 disabled:opacity-60"
                 >
-                  Register
+                  {authLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Signing in with Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Continue with Google &amp; Start Swapping</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
-              </div>
 
-            </form>
-          </div>
-        )}
+                <div className="pt-4 border-t border-[#383838] text-center text-sm text-[#B8B8B8]">
+                  <span>Don&apos;t have an account? </span>
+                  <button
+                    type="button"
+                    disabled={authLoading}
+                    onClick={() => handleGoogleAuth()}
+                    className="text-[#FFD43B] hover:underline font-bold cursor-pointer transition-colors disabled:opacity-60"
+                  >
+                    Register
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
-          {/* ===================== REGISTER ===================== */}
-          {mode === 'register' && (
+          {/* ===================== COMPLETE PROFILE REGISTRATION ===================== */}
+          {isRegistrationMode && firebaseUser && (
             <div>
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#383838]">
                 <div>
                   <h2 className="text-xl font-extrabold text-[#F5F5F5] tracking-tight">
-                    Create Your Account
+                    Complete Your Profile
                   </h2>
                   <p className="text-xs text-[#B8B8B8] mt-0.5">
-                    {registerStep === 1 ? 'Step 1 of 2: Basic credentials & location' : 'Step 2 of 2: Skills, hobbies & habits'}
+                    {registerStep === 1
+                      ? 'Step 1 of 2: Upload your photo & flat details'
+                      : 'Step 2 of 2: Skills, hobbies & living habits'}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setMode('signin')}
-                  className="text-xs text-[#FFD43B] hover:underline font-bold cursor-pointer"
+                  onClick={onSignOutAuth}
+                  className="text-xs text-[#B8B8B8] hover:text-[#FFD43B] font-semibold cursor-pointer inline-flex items-center gap-1"
                 >
-                  &larr; Log In
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Switch Account</span>
                 </button>
               </div>
 
@@ -500,7 +509,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     </div>
                   </div>
 
-                  {/* FLAT LOCATION & BUDGET */}
+                  {/* FLAT LOCATION */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
@@ -516,6 +525,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                         <option value="Delhi NCR">Delhi NCR</option>
                         <option value="Pune">Pune</option>
                         <option value="Hyderabad">Hyderabad</option>
+                        <option value="Chennai">Chennai</option>
                       </select>
                     </div>
 
@@ -534,7 +544,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     </div>
                   </div>
 
-                  {/* GENDER & PREFERENCE */}
+                  {/* GENDER */}
                   <div className="bg-[#242424] p-3 rounded-2xl border border-[#444444]">
                     <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
                       Your Gender
@@ -543,7 +553,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                       <button
                         type="button"
                         onClick={() => handleGenderChange('male')}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                           gender === 'male'
                             ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
                             : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
@@ -554,7 +564,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                       <button
                         type="button"
                         onClick={() => handleGenderChange('female')}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                           gender === 'female'
                             ? 'bg-[#383838] text-[#FFD43B] border-[#FFD43B]'
                             : 'bg-[#1e1e1e] text-[#8e8e8e] border-[#383838]'
@@ -565,7 +575,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     </div>
                   </div>
 
-                  {/* BASIC CREDENTIALS */}
+                  {/* BASIC DETAILS */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
@@ -601,47 +611,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                       </div>
                     </div>
 
-                    <div>
+                    <div className="sm:col-span-2">
                       <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
-                        Email Address
+                        Verified Google Email
                       </label>
                       <div className="relative">
                         <Mail className="w-4 h-4 text-[#8e8e8e] absolute left-3 top-2.5" />
                         <input
                           type="email"
-                          required
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="varun@company.com"
-                          className="w-full pl-9 pr-3 py-2 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">
-                        Password
-                      </label>
-                      <div className="relative">
-                        <Lock className="w-4 h-4 text-[#8e8e8e] absolute left-3 top-2.5" />
-                        <input
-                          type="password"
-                          required
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder="••••••••"
-                          className="w-full pl-9 pr-3 py-2 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
+                          readOnly
+                          value={firebaseUser.email || email}
+                          className="w-full pl-9 pr-3 py-2 bg-[#1f1f1f] border border-[#3d3d3d] rounded-xl text-xs text-[#B8B8B8] cursor-not-allowed"
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* 5. PHOTO UPLOAD (REQUIRED: REAL PHOTO MANDATORY) */}
+                  {/* PHOTO UPLOAD (REQUIRED: REAL PHOTO MANDATORY) */}
                   <div className="bg-[#242424] p-4 rounded-2xl border-2 border-[#FFD43B]/40 shadow-inner">
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
                         <Camera className="w-4 h-4 text-[#FFD43B]" />
-                        <span>Upload Your Photo <span className="text-red-400">*</span></span>
+                        <span>
+                          Upload Your Photo <span className="text-red-400">*</span>
+                        </span>
                       </label>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FFD43B]/20 text-[#FFD43B] border border-[#FFD43B]/30">
                         Mandatory
@@ -649,7 +642,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     </div>
 
                     <p className="text-[11px] text-[#B8B8B8] mb-3">
-                      Real photo is required so prospective flatmates can see you. No AI or stock photos allowed.
+                      Real photo is required so other real flatmates can see you. No AI or stock photos allowed.
                     </p>
 
                     {uploadedPhoto ? (
@@ -699,7 +692,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                           Click to select your profile photo
                         </span>
                         <span className="text-[10px] text-[#8e8e8e] mt-1">
-                          PNG, JPG, JPEG or WEBP (Max 8MB)
+                          PNG, JPG, JPEG or WEBP (Max 10MB)
                         </span>
                         <input
                           type="file"
@@ -733,7 +726,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                               <button
                                 type="button"
                                 onClick={() => setUploadedFlatPhoto(null)}
-                                className="text-[11px] text-red-400 hover:underline mt-0.5"
+                                className="text-[11px] text-red-400 hover:underline mt-0.5 cursor-pointer"
                               >
                                 Remove flat photo
                               </button>
@@ -761,24 +754,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     )}
                   </div>
 
+                  {step1Error && (
+                    <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800 font-medium">
+                      {step1Error}
+                    </p>
+                  )}
+
                   <button
                     type="submit"
-                    className="w-full py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-sm rounded-xl transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer mt-2"
+                    className="w-full py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-sm rounded-xl transition-all shadow-md active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer mt-2"
                   >
                     <span>Next: Add Skills, Hobbies &amp; Habits</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
-
-                  <div className="pt-3 border-t border-[#383838] text-center text-xs text-[#8e8e8e]">
-                    <span>Already have an account? </span>
-                    <button
-                      type="button"
-                      onClick={() => setMode('signin')}
-                      className="text-[#FFD43B] hover:underline font-bold cursor-pointer"
-                    >
-                      Sign In
-                    </button>
-                  </div>
                 </form>
               )}
 
@@ -794,15 +782,29 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                       These will be showcased prominently on your flatmate card:
                     </p>
                     <div className="flex flex-wrap gap-1.5 mb-2">
-                      {['Frontend Engineer', 'UI/UX Designer', 'Product Manager', 'Data Scientist', 'Financial Analyst', 'Architect', 'Marketer'].map(s => {
+                      {[
+                        'Frontend Engineer',
+                        'UI/UX Designer',
+                        'Product Manager',
+                        'Data Scientist',
+                        'Financial Analyst',
+                        'Architect',
+                        'Marketer',
+                      ].map((s) => {
                         const active = selectedSkills.includes(s);
                         return (
                           <button
                             key={s}
                             type="button"
-                            onClick={() => setSelectedSkills(prev => active ? prev.filter(x => x !== s) : [...prev, s])}
-                            className={`text-xs px-2.5 py-1 rounded-md border ${
-                              active ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] font-bold' : 'bg-[#242424] text-[#B8B8B8] border-[#444444]'
+                            onClick={() =>
+                              setSelectedSkills((prev) =>
+                                active ? prev.filter((x) => x !== s) : [...prev, s]
+                              )
+                            }
+                            className={`text-xs px-2.5 py-1 rounded-md border cursor-pointer ${
+                              active
+                                ? 'bg-[#FFD43B] text-[#242424] border-[#FFD43B] font-bold'
+                                : 'bg-[#242424] text-[#B8B8B8] border-[#444444]'
                             }`}
                           >
                             {s} {active && '✓'}
@@ -822,18 +824,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                         type="button"
                         onClick={() => {
                           if (customSkill.trim()) {
-                            setSelectedSkills(prev => [...prev, customSkill.trim()]);
+                            setSelectedSkills((prev) => [...prev, customSkill.trim()]);
                             setCustomSkill('');
                           }
                         }}
-                        className="px-3 py-1.5 bg-[#383838] text-xs font-semibold rounded-lg text-[#F5F5F5]"
+                        className="px-3 py-1.5 bg-[#383838] text-xs font-semibold rounded-lg text-[#F5F5F5] cursor-pointer"
                       >
                         Add
                       </button>
                     </div>
                   </div>
 
-                  {/* HOBBIES & LIFESTYLE */}
+                  {/* HOBBIES, BUDGET & LIFESTYLE */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#383838]">
                     <div>
                       <label className="block text-[11px] font-semibold text-[#B8B8B8] mb-1">
@@ -864,6 +866,39 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                         <option value="Non-Veg Foodie">Non-Veg Foodie</option>
                       </select>
                     </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#B8B8B8] mb-1">
+                        Work Routine
+                      </label>
+                      <select
+                        value={workRoutine}
+                        onChange={(e) => setWorkRoutine(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-[#242424] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                      >
+                        <option value="Hybrid (WFH 2 days/week)">Hybrid (WFH 2 days/week)</option>
+                        <option value="Work From Office (Daily)">Work From Office (Daily)</option>
+                        <option value="Fully Remote / WFH">Fully Remote / WFH</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#B8B8B8] mb-1">
+                        Monthly Rent Share Budget
+                      </label>
+                      <select
+                        value={budget}
+                        onChange={(e) => setBudget(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-[#242424] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                      >
+                        <option value="₹12,000 / mo">₹12,000 / mo</option>
+                        <option value="₹15,000 / mo">₹15,000 / mo</option>
+                        <option value="₹18,000 / mo">₹18,000 / mo</option>
+                        <option value="₹22,000 / mo">₹22,000 / mo</option>
+                        <option value="₹28,000 / mo">₹28,000 / mo</option>
+                        <option value="₹35,000+ / mo">₹35,000+ / mo</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
@@ -879,36 +914,50 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, register
                     />
                   </div>
 
+                  {submitError && (
+                    <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800 font-medium">
+                      {submitError}
+                    </p>
+                  )}
+
                   <div className="flex items-center gap-3 pt-2">
                     <button
                       type="button"
+                      disabled={isSavingProfile}
                       onClick={() => setRegisterStep(1)}
-                      className="py-2.5 px-4 bg-[#383838] hover:bg-[#444444] text-xs font-semibold rounded-xl"
+                      className="py-2.5 px-4 bg-[#383838] hover:bg-[#444444] text-xs font-semibold rounded-xl cursor-pointer disabled:opacity-50"
                     >
                       &larr; Back
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md cursor-pointer"
+                      disabled={isSavingProfile}
+                      className="flex-1 py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md cursor-pointer disabled:opacity-60 flex items-center justify-center gap-2"
                     >
-                      Complete Registration &amp; Discover {preferredFlatmateGender === 'male' ? 'Male' : 'Female'} Flatmates
+                      {isSavingProfile ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Saving Profile to Cloud...</span>
+                        </>
+                      ) : (
+                        <span>
+                          Complete Registration &amp; Discover{' '}
+                          {preferredFlatmateGender === 'male' ? 'Male' : 'Female'} Flatmates
+                        </span>
+                      )}
                     </button>
                   </div>
                 </form>
               )}
             </div>
           )}
-
         </div>
 
         {/* Real Person Registry indicator */}
         <div className="mt-4 text-center text-xs text-[#8e8e8e] flex items-center justify-center gap-2">
           <ShieldCheck className="w-4 h-4 text-[#FFD43B]" />
-          <span>
-            {registeredUsersCount > 0 ? `${registeredUsersCount} real flatmates active in community registry` : 'Real verified flatmates active across Indian tech hubs'}
-          </span>
+          <span>Real-time verified flatmate discovery synced across devices</span>
         </div>
-
       </div>
     </div>
   );

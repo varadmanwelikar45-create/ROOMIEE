@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { Loader2 } from 'lucide-react';
 import { UserProfile, FlatmateCandidate } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AppHeader } from './components/AppHeader';
@@ -7,179 +9,191 @@ import { MatchesView } from './components/MatchesView';
 import { TopPicksView } from './components/TopPicksView';
 import { ProfileView } from './components/ProfileView';
 import { CityBuildings } from './components/CityBuildings';
+import { auth } from './firebase';
+import {
+  FirestoreMatchRecord,
+  loadUserProfileFromDb,
+  recordSwipeAndConnect,
+  saveUserProfileToDb,
+  subscribeToCommunityProfiles,
+  subscribeToUserMatches,
+} from './services/roomieDb';
 
 export default function App() {
+  const [authReady, setAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [currentTab, setCurrentTab] = useState<'discover' | 'top_picks' | 'matches' | 'profile'>('discover');
-  
-  // Community candidates containing only real registered people
-  const [allCandidates, setAllCandidates] = useState<FlatmateCandidate[]>([]);
-  
-  // Matched flatmate IDs
-  const [matchedIds, setMatchedIds] = useState<string[]>([]);
 
-  // Active chat target for direct transition from Match modal
+  // Real-time community candidates synced from Firestore
+  const [allCandidates, setAllCandidates] = useState<FlatmateCandidate[]>([]);
+
+  // Real-time matches synced from Firestore
+  const [matchRecords, setMatchRecords] = useState<FirestoreMatchRecord[]>([]);
+
+  // Active chat target for direct transition from Match modal or Top Picks
   const [activeChatCandidate, setActiveChatCandidate] = useState<FlatmateCandidate | null>(null);
 
   // Gender match filter: Defaults to matching Boys with Boys, Girls with Girls
   const [genderFilter, setGenderFilter] = useState<'male' | 'female' | 'all'>('male');
 
-  // Load registered community and saved session
+  // 1. Observe Firebase Authentication state first (Auth Guard)
   useEffect(() => {
-    // 1. Load community users (only real registered people, no AI profiles)
-    const communityRaw = localStorage.getItem('roomie_community_candidates');
-    let communityList: FlatmateCandidate[] = [];
-    if (communityRaw) {
-      try {
-        const parsed: FlatmateCandidate[] = JSON.parse(communityRaw);
-        // Exclude any legacy AI profiles
-        communityList = parsed.filter(c => !c.id.startsWith('male-') && !c.id.startsWith('female-'));
-      } catch {
-        // Fallback
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (!fbUser || !fbUser.emailVerified) {
+        setCurrentUser(null);
+        setAllCandidates([]);
+        setMatchRecords([]);
+        setProfileLoading(false);
+        setAuthReady(true);
+        return;
       }
-    }
-    setAllCandidates(communityList);
-    localStorage.setItem('roomie_community_candidates', JSON.stringify(communityList));
 
-    // 2. Load current user session
-    const savedUser = localStorage.getItem('roomie_user_session');
-    if (savedUser) {
+      setProfileLoading(true);
       try {
-        const parsed: UserProfile = JSON.parse(savedUser);
-        setCurrentUser(parsed);
-        // Set gender match filter based on logged-in user
-        setGenderFilter(parsed.preferredFlatmateGender === 'any' ? 'all' : parsed.preferredFlatmateGender);
-      } catch {
-        // Fallback
+        const profile = await loadUserProfileFromDb(fbUser.uid);
+        if (profile) {
+          setCurrentUser(profile);
+          setGenderFilter(
+            profile.preferredFlatmateGender === 'any' ? 'all' : profile.preferredFlatmateGender
+          );
+        } else {
+          setCurrentUser(null);
+        }
+      } catch (err) {
+        console.error('Failed to load user profile:', err);
+        setCurrentUser(null);
+      } finally {
+        setProfileLoading(false);
+        setAuthReady(true);
       }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Attach real-time Firestore listeners ONLY after authReady & signed-in profile exists
+  useEffect(() => {
+    if (!authReady || !firebaseUser || !firebaseUser.emailVerified || !currentUser) {
+      return;
     }
 
-    // 3. Load matched IDs
-    const savedMatches = localStorage.getItem('roomie_matched_ids');
-    if (savedMatches) {
-      try {
-        const parsed: string[] = JSON.parse(savedMatches);
-        const filtered = parsed.filter(id => !id.startsWith('male-') && !id.startsWith('female-'));
-        setMatchedIds(filtered);
-        localStorage.setItem('roomie_matched_ids', JSON.stringify(filtered));
-      } catch {
-        // Fallback
-      }
+    const unsubProfiles = subscribeToCommunityProfiles((candidates) => {
+      setAllCandidates(candidates);
+    });
+
+    const unsubMatches = subscribeToUserMatches(firebaseUser.uid, (records) => {
+      setMatchRecords(records);
+    });
+
+    return () => {
+      unsubProfiles();
+      unsubMatches();
+    };
+  }, [authReady, firebaseUser, currentUser?.id]);
+
+  // Callback when AuthScreen finishes sign-in or new user registration in Firestore
+  const handleLoginSuccess = useCallback((user: UserProfile) => {
+    setCurrentUser(user);
+    setGenderFilter(
+      user.preferredFlatmateGender === 'any' ? 'all' : user.preferredFlatmateGender
+    );
+    setCurrentTab('discover');
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      setCurrentUser(null);
+      setAllCandidates([]);
+      setMatchRecords([]);
+      setActiveChatCandidate(null);
+      setCurrentTab('discover');
     }
   }, []);
 
-  // When a real person signs in or registers
-  const handleLoginSuccess = (user: UserProfile) => {
-    setCurrentUser(user);
-    localStorage.setItem('roomie_user_session', JSON.stringify(user));
+  const handleConnectFlatmate = useCallback(
+    (candidate: FlatmateCandidate, isSuper: boolean) => {
+      if (!currentUser) return;
+      recordSwipeAndConnect(currentUser.id, candidate, isSuper ? 'super' : 'like').catch((err) => {
+        console.error('Failed to connect with flatmate:', err);
+      });
+    },
+    [currentUser]
+  );
 
-    // Default to same-gender matching (Boys with Boys, Girls with Girls)
-    const targetFilter = user.preferredFlatmateGender === 'any' ? 'all' : user.preferredFlatmateGender;
-    setGenderFilter(targetFilter);
+  const handlePassFlatmate = useCallback(
+    (candidate: FlatmateCandidate) => {
+      if (!currentUser) return;
+      recordSwipeAndConnect(currentUser.id, candidate, 'pass').catch((err) => {
+        console.error('Failed to record pass:', err);
+      });
+    },
+    [currentUser]
+  );
 
-    // Save this real logged-in user into the community candidate pool so other users see them!
-    const userAsCandidate: FlatmateCandidate = {
-      id: user.id,
-      name: user.name,
-      age: 26,
-      gender: user.gender,
-      profession: user.skills[0] || 'Urban Professional',
-      hasFlat: user.hasFlat,
-      city: user.flatLocation.city,
-      area: user.flatLocation.area,
-      budget: user.budget,
-      photos: user.photos || [],
-      skills: user.skills,
-      hobbies: user.hobbies,
-      interests: user.interests,
-      bio: user.bio,
-      lifestyle: {
-        sleepSchedule: user.lifestyle.sleepSchedule,
-        kitchenDiet: user.lifestyle.kitchenDiet,
-        workRoutine: user.lifestyle.workRoutine,
-        cleanliness: user.lifestyle.cleanliness,
-        smoking: user.lifestyle.smoking,
-        pets: user.lifestyle.pets,
-      },
-      compatibilityScore: 95,
-      flatDetails: user.hasFlat === 'has_flat' ? {
-        bhk: '2/3 BHK Apartment',
-        deposit: '₹50,000',
-        amenities: ['Power Backup', 'Wi-Fi 300 Mbps', 'Washing Machine', 'Daily Housekeeper'],
-      } : undefined,
-    };
+  const handleOpenChatWith = useCallback(
+    (candidate: FlatmateCandidate) => {
+      if (!currentUser) return;
+      recordSwipeAndConnect(currentUser.id, candidate, 'like').catch((err) => {
+        console.error('Failed to create match for chat:', err);
+      });
+      setActiveChatCandidate(candidate);
+      setCurrentTab('matches');
+    },
+    [currentUser]
+  );
 
-    // Update community candidates
-    setAllCandidates((prev) => {
-      const filtered = prev.filter(c => c.id !== user.id);
-      const updated = [userAsCandidate, ...filtered];
-      localStorage.setItem('roomie_community_candidates', JSON.stringify(updated));
-      return updated;
-    });
-
-    setCurrentTab('discover');
-  };
-
-  const handleSignOut = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('roomie_user_session');
-    setCurrentTab('discover');
-  };
-
-  const handleConnectFlatmate = (candidate: FlatmateCandidate, isSuper: boolean) => {
-    if (!matchedIds.includes(candidate.id)) {
-      const updated = [candidate.id, ...matchedIds];
-      setMatchedIds(updated);
-      localStorage.setItem('roomie_matched_ids', JSON.stringify(updated));
-    }
-  };
-
-  const handleOpenChatWith = (candidate: FlatmateCandidate) => {
-    if (!matchedIds.includes(candidate.id)) {
-      const updated = [candidate.id, ...matchedIds];
-      setMatchedIds(updated);
-      localStorage.setItem('roomie_matched_ids', JSON.stringify(updated));
-    }
-    setActiveChatCandidate(candidate);
-    setCurrentTab('matches');
-  };
-
-  const handleUpdateProfile = (updated: UserProfile) => {
+  const handleUpdateProfile = useCallback(async (updated: UserProfile) => {
+    await saveUserProfileToDb(updated);
     setCurrentUser(updated);
-    localStorage.setItem('roomie_user_session', JSON.stringify(updated));
-    
-    // Also update in community registry
-    setAllCandidates(prev => prev.map(c => {
-      if (c.id === updated.id) {
-        return {
-          ...c,
-          hasFlat: updated.hasFlat,
-          city: updated.flatLocation.city,
-          area: updated.flatLocation.area,
-          bio: updated.bio,
-          lifestyle: {
-            ...c.lifestyle,
-            sleepSchedule: updated.lifestyle.sleepSchedule,
-            kitchenDiet: updated.lifestyle.kitchenDiet,
-            workRoutine: updated.lifestyle.workRoutine,
-          }
-        };
-      }
-      return c;
-    }));
-  };
+  }, []);
 
   // Exclude current user from the discovery deck so they don't swipe on themselves
-  const discoveryCandidates = allCandidates.filter(c => c.id !== currentUser?.id);
-  const matchedCandidates = allCandidates.filter(c => matchedIds.includes(c.id));
+  const discoveryCandidates = useMemo(
+    () => allCandidates.filter((c) => c.id !== currentUser?.id),
+    [allCandidates, currentUser?.id]
+  );
+
+  // Derive matched flatmates & order directly from real-time Firestore matchRecords
+  const { matchedIds, matchedCandidates } = useMemo(() => {
+    if (!currentUser) return { matchedIds: [] as string[], matchedCandidates: [] as FlatmateCandidate[] };
+
+    const candidateById = new Map(allCandidates.map((c) => [c.id, c]));
+    const ids: string[] = [];
+    const list: FlatmateCandidate[] = [];
+
+    for (const record of matchRecords) {
+      if (record.status !== 'active') continue;
+      const otherUid = record.userA === currentUser.id ? record.userB : record.userA;
+      if (!ids.includes(otherUid)) {
+        ids.push(otherUid);
+        const cand = candidateById.get(otherUid);
+        if (cand) list.push(cand);
+      }
+    }
+
+    return { matchedIds: ids, matchedCandidates: list };
+  }, [allCandidates, matchRecords, currentUser]);
 
   return (
     <div className="min-h-screen bg-[#242424] text-[#F5F5F5] font-sans selection:bg-[#FFD43B] selection:text-[#242424] flex flex-col relative overflow-x-hidden">
-      {!currentUser ? (
+      {!authReady || profileLoading ? (
+        <div className="flex-1 flex flex-col items-center justify-center relative z-10 gap-3 px-4">
+          <Loader2 className="w-8 h-8 text-[#FFD43B] animate-spin" />
+          <p className="text-xs text-[#B8B8B8] font-medium">
+            Connecting to ROOMIE community database...
+          </p>
+        </div>
+      ) : !currentUser ? (
         <div className="relative z-10 flex-1 flex flex-col">
           <AuthScreen
+            firebaseUser={firebaseUser}
             onLoginSuccess={handleLoginSuccess}
-            registeredUsersCount={allCandidates.length}
+            onSignOutAuth={handleSignOut}
           />
         </div>
       ) : (
@@ -203,6 +217,7 @@ export default function App() {
                 candidates={discoveryCandidates}
                 currentUser={currentUser}
                 onConnectFlatmate={handleConnectFlatmate}
+                onPassFlatmate={handlePassFlatmate}
                 onOpenChatWith={handleOpenChatWith}
                 genderFilter={genderFilter}
                 onGenderFilterChange={setGenderFilter}
@@ -211,7 +226,10 @@ export default function App() {
 
             {currentTab === 'top_picks' && (
               <TopPicksView
-                candidates={discoveryCandidates.filter(c => genderFilter === 'all' || c.gender === genderFilter)}
+                candidates={discoveryCandidates.filter(
+                  (c) => genderFilter === 'all' || c.gender === genderFilter
+                )}
+                matchedIds={matchedIds}
                 onConnectFlatmate={handleConnectFlatmate}
                 onSelectCandidate={handleOpenChatWith}
               />
@@ -219,7 +237,9 @@ export default function App() {
 
             {currentTab === 'matches' && (
               <MatchesView
+                currentUserId={currentUser.id}
                 matchedCandidates={matchedCandidates}
+                matchRecords={matchRecords}
                 initialChatCandidate={activeChatCandidate}
                 onExploreMore={() => setCurrentTab('discover')}
               />
