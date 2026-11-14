@@ -9,6 +9,7 @@ import { MatchesView } from './components/MatchesView';
 import { TopPicksView } from './components/TopPicksView';
 import { ProfileView } from './components/ProfileView';
 import { GmailView, GmailComposePrefill } from './components/GmailView';
+import { ChatScreen } from './components/ChatScreen';
 import { CityBuildings } from './components/CityBuildings';
 import { auth, clearGmailAccessToken } from './firebase';
 import {
@@ -33,10 +34,16 @@ export default function App() {
   // Real-time matches synced from Firestore
   const [matchRecords, setMatchRecords] = useState<FirestoreMatchRecord[]>([]);
 
-  // Active chat target for direct transition from Match modal or Top Picks
+  // Profiles on which the current user has explicitly clicked "I'm Interested"
+  const [interestedIds, setInterestedIds] = useState<string[]>([]);
+
+  // Dedicated full-panel Chat Screen target (ONLY accessible for Interested profiles)
+  const [chatTarget, setChatTarget] = useState<FlatmateCandidate | null>(null);
+
+  // Active chat target inside MatchesView tab
   const [activeChatCandidate, setActiveChatCandidate] = useState<FlatmateCandidate | null>(null);
 
-  // Prefill payload when jumping from Matches chat to Gmail Compose
+  // Prefill payload when jumping from chat to Gmail Compose
   const [gmailPrefill, setGmailPrefill] = useState<GmailComposePrefill | null>(null);
 
   // Gender match filter: Defaults to matching Boys with Boys, Girls with Girls
@@ -120,6 +127,8 @@ export default function App() {
       setCurrentUser(null);
       setAllCandidates([]);
       setMatchRecords([]);
+      setInterestedIds([]);
+      setChatTarget(null);
       setActiveChatCandidate(null);
       setGmailPrefill(null);
       setCurrentTab('discover');
@@ -129,8 +138,9 @@ export default function App() {
   const handleConnectFlatmate = useCallback(
     (candidate: FlatmateCandidate, isSuper: boolean) => {
       if (!currentUser) return;
+      setInterestedIds((prev) => (prev.includes(candidate.id) ? prev : [...prev, candidate.id]));
       recordSwipeAndConnect(currentUser.id, candidate, isSuper ? 'super' : 'like').catch((err) => {
-        console.error('Failed to connect with flatmate:', err);
+        console.error('Failed to record interest:', err);
       });
     },
     [currentUser]
@@ -146,25 +156,14 @@ export default function App() {
     [currentUser]
   );
 
-  const handleOpenChatWith = useCallback(
-    (candidate: FlatmateCandidate) => {
-      if (!currentUser) return;
-      recordSwipeAndConnect(currentUser.id, candidate, 'like').catch((err) => {
-        console.error('Failed to create match for chat:', err);
-      });
-      setActiveChatCandidate(candidate);
-      setCurrentTab('matches');
-    },
-    [currentUser]
-  );
-
   const handleEmailInvite = useCallback(
     (candidate: FlatmateCandidate) => {
       if (!currentUser) return;
+      setChatTarget(null);
       setGmailPrefill({
         to: '',
         subject: `ROOMIE Flatmate Visit — ${candidate.area}, ${candidate.city}`,
-        body: `Hi ${candidate.name},\n\nWe matched on ROOMIE! I'm ${currentUser.name} (${currentUser.hasFlat === 'has_flat' ? 'I have a flat' : 'looking for a flat'} in ${currentUser.flatLocation.area}, ${currentUser.flatLocation.city}).\n\nWould you like to schedule a quick call or flat visit this week?\n\nBest,\n${currentUser.name}`,
+        body: `Hi ${candidate.name},\n\nWe connected on ROOMIE! I'm ${currentUser.name} (${currentUser.hasFlat === 'has_flat' ? 'I have a flat' : 'looking for a flat'} in ${currentUser.flatLocation.area}, ${currentUser.flatLocation.city}).\n\nWould you like to schedule a quick call or flat visit this week?\n\nBest,\n${currentUser.name}`,
       });
       setCurrentTab('gmail');
     },
@@ -203,6 +202,23 @@ export default function App() {
     return { matchedIds: ids, matchedCandidates: list };
   }, [allCandidates, matchRecords, currentUser]);
 
+  // Combined set of Interested profile IDs (Firestore matchRecords + optimistic interestedIds)
+  const effectiveMatchedIds = useMemo(
+    () => Array.from(new Set([...matchedIds, ...interestedIds])),
+    [matchedIds, interestedIds]
+  );
+
+  // Strictly only allow opening the dedicated ChatScreen if the user has clicked Interested
+  const handleOpenChatWith = useCallback(
+    (candidate: FlatmateCandidate) => {
+      if (!currentUser) return;
+      if (!effectiveMatchedIds.includes(candidate.id)) return;
+      setActiveChatCandidate(candidate);
+      setChatTarget(candidate);
+    },
+    [currentUser, effectiveMatchedIds]
+  );
+
   return (
     <div className="min-h-screen bg-[#242424] text-[#F5F5F5] font-sans selection:bg-[#FFD43B] selection:text-[#242424] flex flex-col relative overflow-x-hidden">
       {!authReady || profileLoading ? (
@@ -227,6 +243,7 @@ export default function App() {
             currentUser={currentUser}
             currentTab={currentTab}
             onTabChange={(tab) => {
+              setChatTarget(null);
               setCurrentTab(tab);
               if (tab !== 'matches') setActiveChatCandidate(null);
             }}
@@ -236,53 +253,68 @@ export default function App() {
 
           {/* Main App Body */}
           <main className="flex-1 pb-12 relative z-10">
-            {currentTab === 'discover' && (
-              <DiscoveryDeck
-                candidates={discoveryCandidates}
+            {chatTarget ? (
+              <ChatScreen
                 currentUser={currentUser}
-                onConnectFlatmate={handleConnectFlatmate}
-                onPassFlatmate={handlePassFlatmate}
-                onOpenChatWith={handleOpenChatWith}
-                genderFilter={genderFilter}
-                onGenderFilterChange={setGenderFilter}
-              />
-            )}
-
-            {currentTab === 'top_picks' && (
-              <TopPicksView
-                candidates={discoveryCandidates.filter(
-                  (c) => genderFilter === 'all' || c.gender === genderFilter
-                )}
-                matchedIds={matchedIds}
-                onConnectFlatmate={handleConnectFlatmate}
-                onSelectCandidate={handleOpenChatWith}
-              />
-            )}
-
-            {currentTab === 'matches' && (
-              <MatchesView
-                currentUserId={currentUser.id}
-                matchedCandidates={matchedCandidates}
+                candidate={chatTarget}
+                isInterested={effectiveMatchedIds.includes(chatTarget.id)}
                 matchRecords={matchRecords}
-                initialChatCandidate={activeChatCandidate}
-                onExploreMore={() => setCurrentTab('discover')}
+                onBack={() => setChatTarget(null)}
                 onEmailInvite={handleEmailInvite}
               />
-            )}
+            ) : (
+              <>
+                {currentTab === 'discover' && (
+                  <DiscoveryDeck
+                    candidates={discoveryCandidates}
+                    currentUser={currentUser}
+                    matchedIds={effectiveMatchedIds}
+                    onConnectFlatmate={handleConnectFlatmate}
+                    onPassFlatmate={handlePassFlatmate}
+                    onOpenChatWith={handleOpenChatWith}
+                    genderFilter={genderFilter}
+                    onGenderFilterChange={setGenderFilter}
+                  />
+                )}
 
-            {currentTab === 'gmail' && (
-              <GmailView
-                currentUser={currentUser}
-                prefillCompose={gmailPrefill}
-                onConsumePrefill={() => setGmailPrefill(null)}
-              />
-            )}
+                {currentTab === 'top_picks' && (
+                  <TopPicksView
+                    candidates={discoveryCandidates.filter(
+                      (c) => genderFilter === 'all' || c.gender === genderFilter
+                    )}
+                    matchedIds={effectiveMatchedIds}
+                    onConnectFlatmate={handleConnectFlatmate}
+                    onSelectCandidate={handleOpenChatWith}
+                  />
+                )}
 
-            {currentTab === 'profile' && (
-              <ProfileView
-                currentUser={currentUser}
-                onUpdateProfile={handleUpdateProfile}
-              />
+                {currentTab === 'matches' && (
+                  <MatchesView
+                    currentUserId={currentUser.id}
+                    matchedCandidates={matchedCandidates}
+                    matchRecords={matchRecords}
+                    initialChatCandidate={activeChatCandidate}
+                    onExploreMore={() => setCurrentTab('discover')}
+                    onEmailInvite={handleEmailInvite}
+                    onOpenFullChat={handleOpenChatWith}
+                  />
+                )}
+
+                {currentTab === 'gmail' && (
+                  <GmailView
+                    currentUser={currentUser}
+                    prefillCompose={gmailPrefill}
+                    onConsumePrefill={() => setGmailPrefill(null)}
+                  />
+                )}
+
+                {currentTab === 'profile' && (
+                  <ProfileView
+                    currentUser={currentUser}
+                    onUpdateProfile={handleUpdateProfile}
+                  />
+                )}
+              </>
             )}
           </main>
         </>

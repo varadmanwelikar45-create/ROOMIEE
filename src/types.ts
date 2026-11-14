@@ -28,6 +28,7 @@ export interface UserProfile {
   };
   bio: string;
   photos: string[];
+  flatPhotos?: string[];
   registeredAt: string;
 }
 
@@ -42,6 +43,7 @@ export interface FlatmateCandidate {
   area: string;
   budget: string;
   photos: string[];
+  flatPhotos?: string[];
   skills: string[];
   hobbies: string[];
   interests: string[];

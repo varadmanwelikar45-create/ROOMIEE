@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, FlatStatus } from '../types';
 import { compressImageFile } from '../utils/storage';
+import { FlatPhotoUploader } from './FlatPhotoUploader';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
@@ -33,6 +34,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
   const [editedCity, setEditedCity] = useState(currentUser.flatLocation.city);
   const [editedHasFlat, setEditedHasFlat] = useState<FlatStatus>(currentUser.hasFlat);
   const [editedPhotos, setEditedPhotos] = useState<string[]>(currentUser.photos || []);
+  const [editedFlatPhotos, setEditedFlatPhotos] = useState<string[]>(currentUser.flatPhotos || []);
   const [photoError, setPhotoError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -47,6 +49,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
     setEditedCity(currentUser.flatLocation.city);
     setEditedHasFlat(currentUser.hasFlat);
     setEditedPhotos(currentUser.photos || []);
+    setEditedFlatPhotos(currentUser.flatPhotos || []);
   }, [currentUser]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,6 +82,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
         area: editedArea.trim() || currentUser.flatLocation.area,
       },
       photos: editedPhotos.length > 0 ? editedPhotos : currentUser.photos,
+      flatPhotos: editedHasFlat === 'has_flat' ? editedFlatPhotos : [],
       lifestyle: {
         ...currentUser.lifestyle,
         sleepSchedule: editedSleep,
@@ -93,6 +97,24 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
       setTimeout(() => setSavedSuccess(false), 2500);
     } catch {
       setSaveError('Could not save profile updates. Please verify your connection and try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleInstantFlatPhotosChange = async (nextFlatPhotos: string[]) => {
+    setEditedFlatPhotos(nextFlatPhotos);
+    setSaveError('');
+    setIsSaving(true);
+    try {
+      await onUpdateProfile({
+        ...currentUser,
+        flatPhotos: nextFlatPhotos,
+      });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch {
+      setSaveError('Could not update shared flat photos. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -233,6 +255,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 </div>
               </div>
 
+              {editedHasFlat === 'has_flat' && (
+                <FlatPhotoUploader
+                  flatPhotos={editedFlatPhotos}
+                  onChange={(next) => setEditedFlatPhotos(next)}
+                  disabled={isSaving}
+                />
+              )}
+
               {/* Location of Flat */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -349,6 +379,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   </div>
                 </div>
               </div>
+
+              {/* SHARE REAL FLAT PHOTOS SECTION (for users who have a flat) */}
+              {currentUser.hasFlat === 'has_flat' && (
+                <div className="space-y-2">
+                  <FlatPhotoUploader
+                    flatPhotos={currentUser.flatPhotos || []}
+                    onChange={handleInstantFlatPhotosChange}
+                    disabled={isSaving}
+                  />
+                  {saveError && (
+                    <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
+                      {saveError}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* SKILLS */}
               <div>

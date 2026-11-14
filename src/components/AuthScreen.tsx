@@ -21,6 +21,7 @@ import { UserProfile, Gender, FlatStatus } from '../types';
 import { compressImageFile } from '../utils/storage';
 import { auth, googleProvider } from '../firebase';
 import { loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
+import { FlatPhotoUploader } from './FlatPhotoUploader';
 
 interface AuthScreenProps {
   firebaseUser: FirebaseUser | null;
@@ -69,7 +70,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   // Photo upload states (Required for registration)
   const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
-  const [uploadedFlatPhoto, setUploadedFlatPhoto] = useState<string | null>(null);
+  const [uploadedFlatPhotos, setUploadedFlatPhotos] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState('');
 
   // Prefill name and email when Google user is authenticated and completing registration
@@ -82,8 +83,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   }, [firebaseUser]);
 
-  // Handle local image file upload & compress to fit Firestore document & security rule limits
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, isFlatPhoto = false) => {
+  // Handle local profile image upload & compress to fit Firestore document & security rule limits
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -101,11 +102,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setPhotoError('');
     try {
       const compressedDataUrl = await compressImageFile(file, 520, 0.72);
-      if (isFlatPhoto) {
-        setUploadedFlatPhoto(compressedDataUrl);
-      } else {
-        setUploadedPhoto(compressedDataUrl);
-      }
+      setUploadedPhoto(compressedDataUrl);
     } catch (err) {
       setPhotoError(
         err instanceof Error
@@ -259,11 +256,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
-    const photoList: string[] = [uploadedPhoto];
-    if (uploadedFlatPhoto) {
-      photoList.push(uploadedFlatPhoto);
-    }
-
     const newUser: UserProfile = {
       id: firebaseUser.uid,
       name: name.trim(),
@@ -291,7 +283,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       bio:
         bio.trim() ||
         `Hi, I am ${name.trim()}! Looking for a compatible ${preferredFlatmateGender} flatmate in ${area.trim()}, ${city}.`,
-      photos: photoList,
+      photos: [uploadedPhoto],
+      flatPhotos: hasFlat === 'has_flat' ? uploadedFlatPhotos : [],
       registeredAt: new Date().toISOString(),
     };
 
@@ -721,7 +714,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                               <input
                                 type="file"
                                 accept="image/*"
-                                onChange={(e) => handlePhotoUpload(e, false)}
+                                onChange={handlePhotoUpload}
                                 className="hidden"
                               />
                             </label>
@@ -749,53 +742,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <input
                           type="file"
                           accept="image/*"
-                          onChange={(e) => handlePhotoUpload(e, false)}
+                          onChange={handlePhotoUpload}
                           className="hidden"
                         />
                       </label>
                     )}
 
-                    {/* Optional flat photo if user has flat */}
+                    {/* AI-Verified Flat Photos Uploader if user has a flat */}
                     {hasFlat === 'has_flat' && (
                       <div className="mt-4 pt-3 border-t border-[#383838]">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs font-semibold text-[#B8B8B8] flex items-center gap-1.5">
-                            <Home className="w-3.5 h-3.5 text-[#FFD43B]" />
-                            <span>Flat / Room Photo (Optional)</span>
-                          </label>
-                          <span className="text-[10px] text-[#8e8e8e]">Optional</span>
-                        </div>
-
-                        {uploadedFlatPhoto ? (
-                          <div className="flex items-center gap-3 bg-[#303030] p-2.5 rounded-xl border border-[#484848]">
-                            <img
-                              src={uploadedFlatPhoto}
-                              alt="Flat preview"
-                              className="w-14 h-14 rounded-lg object-cover border border-[#484848]"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-[#F5F5F5] font-medium truncate">Flat Photo Added</p>
-                              <button
-                                type="button"
-                                onClick={() => setUploadedFlatPhoto(null)}
-                                className="text-[11px] text-red-400 hover:underline mt-0.5 cursor-pointer"
-                              >
-                                Remove flat photo
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <label className="flex items-center justify-center gap-2 py-2 px-3 border border-dashed border-[#484848] hover:border-[#FFD43B] rounded-xl bg-[#2a2a2a] text-xs text-[#B8B8B8] hover:text-[#FFD43B] cursor-pointer transition-colors">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Add a photo of your flat or room</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handlePhotoUpload(e, true)}
-                              className="hidden"
-                            />
-                          </label>
-                        )}
+                        <FlatPhotoUploader
+                          flatPhotos={uploadedFlatPhotos}
+                          onChange={(next) => setUploadedFlatPhotos(next)}
+                          compact
+                        />
                       </div>
                     )}
 

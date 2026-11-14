@@ -53,6 +53,14 @@ service cloud.firestore {
         && (arr.size() < 2 || (arr[1] is string && arr[1].size() >= 10 && arr[1].size() <= 350000));
     }
 
+    function isValidFlatPhotoList(arr) {
+      return arr is list
+        && arr.size() <= 3
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() >= 10 && arr[0].size() <= 180000))
+        && (arr.size() < 2 || (arr[1] is string && arr[1].size() >= 10 && arr[1].size() <= 180000))
+        && (arr.size() < 3 || (arr[2] is string && arr[2].size() >= 10 && arr[2].size() <= 180000));
+    }
+
     // ==================== VALIDATION BLUEPRINTS ====================
     function isValidPublicProfile(data) {
       return data.keys().hasAll([
@@ -65,7 +73,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'uid', 'name', 'age', 'gender', 'preferredFlatmateGender',
           'profession', 'hasFlat', 'city', 'area', 'budget',
-          'photos', 'skills', 'hobbies', 'interests',
+          'photos', 'flatPhotos', 'skills', 'hobbies', 'interests',
           'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
           'smoking', 'pets', 'bio', 'isActive', 'createdAt', 'updatedAt'
         ])
@@ -81,6 +89,7 @@ service cloud.firestore {
         && isValidString(data.area, 2, 100)
         && isValidString(data.budget, 2, 40)
         && isValidPhotoList(data.photos)
+        && (!('flatPhotos' in data) || isValidFlatPhotoList(data.flatPhotos))
         && isValidStringList(data.skills, 1, 10, 60)
         && isValidStringList(data.hobbies, 0, 10, 60)
         && isValidStringList(data.interests, 0, 10, 60)
@@ -157,7 +166,7 @@ service cloud.firestore {
     match /profiles/{userId} {
       allow get: if isVerifiedUser()
         && isValidId(userId)
-        && (isOwner(userId) || existing().isActive == true);
+        && (isOwner(userId) || (resource != null && existing().isActive == true));
 
       allow list: if isVerifiedUser()
         && resource.data.isActive == true;
@@ -180,7 +189,7 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'name', 'age', 'gender', 'preferredFlatmateGender',
           'profession', 'hasFlat', 'city', 'area', 'budget',
-          'photos', 'skills', 'hobbies', 'interests',
+          'photos', 'flatPhotos', 'skills', 'hobbies', 'interests',
           'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
           'smoking', 'pets', 'bio', 'isActive', 'updatedAt'
         ]);
@@ -217,7 +226,10 @@ service cloud.firestore {
     match /swipes/{swipeId} {
       allow get: if isVerifiedUser()
         && isValidId(swipeId)
-        && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid);
+        && (
+          (resource == null && swipeId.split('_').size() == 2 && swipeId.split('_')[0] == request.auth.uid) ||
+          (resource != null && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid))
+        );
 
       allow list: if isVerifiedUser()
         && resource.data.fromUid == request.auth.uid;
@@ -239,7 +251,10 @@ service cloud.firestore {
     match /matches/{matchId} {
       allow get: if isVerifiedUser()
         && isValidId(matchId)
-        && (existing().userA == request.auth.uid || existing().userB == request.auth.uid);
+        && (
+          (resource == null && matchId.split('_').size() == 2 && (matchId.split('_')[0] == request.auth.uid || matchId.split('_')[1] == request.auth.uid)) ||
+          (resource != null && (existing().userA == request.auth.uid || existing().userB == request.auth.uid))
+        );
 
       allow list: if isVerifiedUser()
         && (resource.data.userA == request.auth.uid || resource.data.userB == request.auth.uid);
@@ -282,6 +297,7 @@ service cloud.firestore {
         allow get: if isVerifiedUser()
           && isValidId(matchId)
           && isValidId(messageId)
+          && exists(/databases/$(database)/documents/matches/$(matchId))
           && (
             get(/databases/$(database)/documents/matches/$(matchId)).data.userA == request.auth.uid ||
             get(/databases/$(database)/documents/matches/$(matchId)).data.userB == request.auth.uid
@@ -295,6 +311,7 @@ service cloud.firestore {
           && isValidId(messageId)
           && isValidChatMessage(incoming())
           && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/matches/$(matchId))
           && get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'active'
           && incoming().userA == get(/databases/$(database)/documents/matches/$(matchId)).data.userA
           && incoming().userB == get(/databases/$(database)/documents/matches/$(matchId)).data.userB;

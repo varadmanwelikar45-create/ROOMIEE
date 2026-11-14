@@ -1,6 +1,6 @@
 import React from 'react';
 import { FlatmateCandidate } from '../types';
-import { Star, Heart, MapPin, Briefcase, Home, Search, CheckCircle2 } from 'lucide-react';
+import { Star, Heart, MapPin, Briefcase, Home, Search, MessageSquare, Lock, ShieldCheck } from 'lucide-react';
 
 interface TopPicksViewProps {
   candidates: FlatmateCandidate[];
@@ -52,11 +52,21 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
-        {topPicks.map((candidate) => (
+        {topPicks.map((candidate) => {
+          const isInterested = matchedIds.includes(candidate.id);
+          return (
           <div
             key={candidate.id}
-            onClick={() => onSelectCandidate(candidate)}
-            className="group relative bg-[#303030] border border-[#444444] hover:border-[#FFD43B] rounded-3xl overflow-hidden shadow-xl transition-all duration-200 hover:-translate-y-1 cursor-pointer flex flex-col justify-between"
+            onClick={() => {
+              if (isInterested) {
+                onSelectCandidate(candidate);
+              }
+            }}
+            className={`group relative bg-[#303030] border rounded-3xl overflow-hidden shadow-xl transition-all duration-200 flex flex-col justify-between ${
+              isInterested
+                ? 'border-emerald-500/60 hover:border-emerald-400 hover:-translate-y-1 cursor-pointer'
+                : 'border-[#444444] hover:border-[#FFD43B]/60'
+            }`}
           >
             <div>
               {/* Photo Viewport */}
@@ -125,49 +135,82 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
                 <p className="text-[11px] text-[#B8B8B8] line-clamp-2 italic">
                   &ldquo;{candidate.bio}&rdquo;
                 </p>
+                {candidate.hasFlat === 'has_flat' &&
+                  candidate.flatPhotos &&
+                  candidate.flatPhotos.length > 0 && (
+                    <div className="pt-1.5 space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold text-emerald-300 inline-flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3" />
+                          <span>Verified Flat Pics ({candidate.flatPhotos.length})</span>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {candidate.flatPhotos.slice(0, 3).map((src, idx) => (
+                          <div
+                            key={idx}
+                            className="aspect-[4/3] rounded-lg overflow-hidden border border-[#484848] bg-[#242424]"
+                          >
+                            <img
+                              src={src}
+                              alt={`${candidate.name} flat ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
             </div>
 
             {/* Quick Connect Action Bar */}
-            <div className="p-3 pt-0 flex items-center gap-2">
-              {matchedIds.includes(candidate.id) ? (
+            <div className="p-3 pt-0 flex flex-col gap-1.5">
+              {isInterested ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onSelectCandidate(candidate);
                   }}
-                  className="flex-1 py-2 px-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 px-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Connected · Chat</span>
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Say Hello · Open Chat</span>
                 </button>
               ) : (
                 <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onConnectFlatmate(candidate, false);
-                    }}
-                    className="flex-1 py-2 px-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Heart className="w-3.5 h-3.5 fill-current" />
-                    <span>Connect</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onConnectFlatmate(candidate, true);
-                    }}
-                    className="p-2 bg-[#383838] hover:bg-sky-500 hover:text-white text-sky-400 rounded-xl transition-colors cursor-pointer"
-                    title="Super Roomie"
-                  >
-                    <Star className="w-4 h-4 fill-current" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onConnectFlatmate(candidate, false);
+                      }}
+                      className="flex-1 py-2.5 px-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl transition-all shadow flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Heart className="w-3.5 h-3.5 fill-current" />
+                      <span>I&apos;m Interested</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onConnectFlatmate(candidate, true);
+                      }}
+                      className="p-2.5 bg-[#383838] hover:bg-sky-500 hover:text-white text-sky-400 rounded-xl transition-colors cursor-pointer"
+                      title="Super Interested"
+                    >
+                      <Star className="w-4 h-4 fill-current" />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-[#8e8e8e] flex items-center justify-center gap-1 pt-0.5">
+                    <Lock className="w-2.5 h-2.5" />
+                    <span>Click &ldquo;I&apos;m Interested&rdquo; to unlock Say Hello chat</span>
+                  </p>
                 </>
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
         </div>
       )}
 

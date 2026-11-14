@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FlatmateCandidate } from '../types';
-import { Send, MapPin, Sparkles, Mail } from 'lucide-react';
+import { Send, MapPin, Sparkles, Mail, MessageSquare } from 'lucide-react';
 import {
   FirestoreChatMessage,
   FirestoreMatchRecord,
@@ -16,6 +16,7 @@ interface MatchesViewProps {
   initialChatCandidate?: FlatmateCandidate | null;
   onExploreMore: () => void;
   onEmailInvite?: (candidate: FlatmateCandidate) => void;
+  onOpenFullChat?: (candidate: FlatmateCandidate) => void;
 }
 
 export const MatchesView: React.FC<MatchesViewProps> = ({
@@ -25,6 +26,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   initialChatCandidate,
   onExploreMore,
   onEmailInvite,
+  onOpenFullChat,
 }) => {
   const [selectedChat, setSelectedChat] = useState<FlatmateCandidate | null>(
     initialChatCandidate || (matchedCandidates.length > 0 ? matchedCandidates[0] : null)
@@ -247,7 +249,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 text-right text-[11px] text-[#8e8e8e]">
+                  <div className="flex items-center gap-2 text-right text-[11px] text-[#8e8e8e]">
+                    {onOpenFullChat && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenFullChat(selectedChat)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Open dedicated chat screen"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Open Chat</span>
+                      </button>
+                    )}
                     {onEmailInvite && (
                       <button
                         type="button"
@@ -259,7 +272,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                         <span className="hidden sm:inline">Gmail Invite</span>
                       </button>
                     )}
-                    <span className="text-emerald-400 font-bold block">● Verified Roomie</span>
+                    <span className="text-emerald-400 font-bold hidden sm:inline">● Interested</span>
                   </div>
                 </div>
 

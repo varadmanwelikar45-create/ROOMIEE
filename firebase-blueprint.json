@@ -65,6 +65,10 @@
           "type": "array",
           "description": "Compressed real photo URLs or data URLs (1 to 2 photos)."
         },
+        "flatPhotos": {
+          "type": "array",
+          "description": "Up to 3 AI-verified real flat/room photos shared by flatmates who have a flat."
+        },
         "skills": {
           "type": "array",
           "description": "Up to 10 user skills."

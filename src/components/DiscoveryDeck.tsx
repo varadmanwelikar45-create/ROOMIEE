@@ -15,13 +15,15 @@ import {
   Utensils, 
   CheckCircle2, 
   MessageSquare,
-  Filter
+  Filter,
+  ShieldCheck
 } from 'lucide-react';
 import { FlatmateCandidate, UserProfile } from '../types';
 
 interface DiscoveryDeckProps {
   candidates: FlatmateCandidate[];
   currentUser: UserProfile;
+  matchedIds?: string[];
   onConnectFlatmate: (candidate: FlatmateCandidate, isSuper: boolean) => void;
   onPassFlatmate?: (candidate: FlatmateCandidate) => void;
   onOpenChatWith: (candidate: FlatmateCandidate) => void;
@@ -32,6 +34,7 @@ interface DiscoveryDeckProps {
 export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
   candidates,
   currentUser,
+  matchedIds = [],
   onConnectFlatmate,
   onPassFlatmate,
   onOpenChatWith,
@@ -64,6 +67,15 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
 
   const currentCandidate = filteredCandidates[currentIndex];
   const isDeckComplete = currentIndex >= filteredCandidates.length;
+
+  const currentGallery = currentCandidate
+    ? [
+        ...(currentCandidate.photos || []),
+        ...(currentCandidate.hasFlat === 'has_flat' ? currentCandidate.flatPhotos || [] : []),
+      ]
+    : [];
+  const profilePhotoCount = currentCandidate?.photos?.length || 0;
+  const isViewingFlatPhoto = photoIndex >= profilePhotoCount && currentGallery.length > 0;
 
   // Reset photo index when candidate changes
   useEffect(() => {
@@ -124,15 +136,15 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
   };
 
   const handlePhotoTap = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!currentCandidate || currentCandidate.photos.length <= 1) return;
+    if (!currentCandidate || currentGallery.length <= 1) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const isRightHalf = clickX > rect.width / 2;
 
     if (isRightHalf) {
-      setPhotoIndex((prev) => (prev + 1) % currentCandidate.photos.length);
+      setPhotoIndex((prev) => (prev + 1) % currentGallery.length);
     } else {
-      setPhotoIndex((prev) => (prev - 1 + currentCandidate.photos.length) % currentCandidate.photos.length);
+      setPhotoIndex((prev) => (prev - 1 + currentGallery.length) % currentGallery.length);
     }
   };
 
@@ -257,10 +269,10 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
               onClick={handlePhotoTap}
               className="relative w-full h-full cursor-pointer overflow-hidden"
             >
-              {currentCandidate.photos && currentCandidate.photos.length > 0 ? (
+              {currentGallery.length > 0 ? (
                 <img
-                  src={currentCandidate.photos[photoIndex] || currentCandidate.photos[0]}
-                  alt={currentCandidate.name}
+                  src={currentGallery[photoIndex] || currentGallery[0]}
+                  alt={isViewingFlatPhoto ? `${currentCandidate.name}'s flat` : currentCandidate.name}
                   className="w-full h-full object-cover object-center"
                   referrerPolicy="no-referrer"
                 />
@@ -274,9 +286,9 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-black/40 pointer-events-none" />
 
               {/* Tinder Multi-Photo Story Bars */}
-              {currentCandidate.photos.length > 1 && (
+              {currentGallery.length > 1 && (
                 <div className="absolute top-3 left-3 right-3 flex items-center gap-1.5 z-20">
-                  {currentCandidate.photos.map((_, idx) => (
+                  {currentGallery.map((_, idx) => (
                     <div
                       key={idx}
                       className={`h-1 flex-1 rounded-full transition-all ${
@@ -287,12 +299,22 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
                 </div>
               )}
 
-              {/* Top Tags: Has Flat (Yes/No) & Location */}
-              <div className="absolute top-7 left-3 right-3 flex items-center justify-between z-10 pointer-events-none">
-                {currentCandidate.hasFlat === 'has_flat' ? (
+              {/* Top Tags: Has Flat (Yes/No), Flat Photo Indicator & Location */}
+              <div className="absolute top-7 left-3 right-3 flex items-center justify-between gap-2 z-10 pointer-events-none">
+                {isViewingFlatPhoto ? (
+                  <span className="inline-flex items-center gap-1.5 bg-sky-500/90 text-white text-[11px] font-extrabold px-3 py-1 rounded-full shadow-lg border border-sky-300">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>REAL FLAT PHOTO · {currentCandidate.area}</span>
+                  </span>
+                ) : currentCandidate.hasFlat === 'has_flat' ? (
                   <span className="inline-flex items-center gap-1.5 bg-emerald-500/90 text-white text-[11px] font-extrabold px-3 py-1 rounded-full shadow-lg border border-emerald-400">
                     <Home className="w-3.5 h-3.5" />
-                    <span>HAS FLAT · {currentCandidate.area}</span>
+                    <span>
+                      HAS FLAT · {currentCandidate.area}
+                      {currentCandidate.flatPhotos && currentCandidate.flatPhotos.length > 0
+                        ? ` (${currentCandidate.flatPhotos.length} Flat Pics)`
+                        : ''}
+                    </span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 bg-amber-500/90 text-[#242424] text-[11px] font-extrabold px-3 py-1 rounded-full shadow-lg border border-amber-300">
@@ -301,7 +323,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
                   </span>
                 )}
 
-                <span className="bg-[#242424]/90 backdrop-blur-md text-[#FFD43B] font-extrabold text-xs px-2.5 py-1 rounded-full border border-[#484848]">
+                <span className="bg-[#242424]/90 backdrop-blur-md text-[#FFD43B] font-extrabold text-xs px-2.5 py-1 rounded-full border border-[#484848] shrink-0">
                   {currentCandidate.compatibilityScore || 92}% Match
                 </span>
               </div>
@@ -415,12 +437,12 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
               <Star className="w-6 h-6 stroke-[2.5] fill-sky-400 hover:fill-white" />
             </button>
 
-            {/* 4. LIKE / CONNECT (Green Circular Button with Heart / Match) */}
+            {/* 4. LIKE / I'M INTERESTED (Green Circular Button with Heart) */}
             <button
               onClick={handleLike}
               className="w-16 h-16 rounded-full bg-[#303030] border-2 border-emerald-400 text-emerald-400 hover:bg-emerald-400 hover:text-white flex items-center justify-center transition-all duration-150 shadow-xl hover:scale-110 active:scale-95 cursor-pointer"
-              title="Like / Roomie Connect (Arrow Right)"
-              aria-label="Like"
+              title="I'm Interested in This Profile (Arrow Right)"
+              aria-label="I'm Interested"
             >
               <Heart className="w-8 h-8 stroke-[2.8] fill-emerald-400 hover:fill-white" />
             </button>
@@ -522,6 +544,38 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
               )}
             </div>
 
+            {/* Verified Real Flat Photos Gallery */}
+            {currentCandidate.hasFlat === 'has_flat' &&
+              currentCandidate.flatPhotos &&
+              currentCandidate.flatPhotos.length > 0 && (
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+                      <Home className="w-3.5 h-3.5" />
+                      <span>Shared Flat Photos</span>
+                    </h4>
+                    <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/35 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>AI-Verified Real</span>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {currentCandidate.flatPhotos.map((src, idx) => (
+                      <div
+                        key={idx}
+                        className="aspect-[4/3] rounded-xl overflow-hidden border border-[#484848] bg-[#242424]"
+                      >
+                        <img
+                          src={src}
+                          alt={`${currentCandidate.name} flat ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             {/* About Me Bio */}
             <div className="mb-5">
               <h4 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
@@ -582,19 +636,33 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
                   setShowBioModal(false);
                   handlePass();
                 }}
-                className="flex-1 py-3 bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] font-bold text-xs rounded-xl"
+                className="flex-1 py-3 bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] font-bold text-xs rounded-xl cursor-pointer"
               >
                 Pass
               </button>
-              <button
-                onClick={() => {
-                  setShowBioModal(false);
-                  handleLike();
-                }}
-                className="flex-1 py-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md"
-              >
-                Connect as Roomie
-              </button>
+              {matchedIds.includes(currentCandidate.id) ? (
+                <button
+                  onClick={() => {
+                    setShowBioModal(false);
+                    onOpenChatWith(currentCandidate);
+                  }}
+                  className="flex-1 py-3 bg-emerald-400 hover:bg-emerald-300 text-[#242424] font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Say Hello</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowBioModal(false);
+                    handleLike();
+                  }}
+                  className="flex-1 py-3 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Heart className="w-4 h-4 fill-current" />
+                  <span>I&apos;m Interested in This Profile</span>
+                </button>
+              )}
             </div>
 
           </div>
@@ -606,11 +674,11 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md transition-opacity duration-200">
           <div className="relative w-full max-w-sm bg-[#303030] border border-[#FFD43B] rounded-3xl p-6 sm:p-8 text-center shadow-2xl text-[#F5F5F5]">
             
-            <p className="text-xs font-bold uppercase tracking-widest text-[#FFD43B] mb-1">
-              Mutual Flatmate Fit
+            <p className="text-xs font-bold uppercase tracking-widest text-emerald-400 mb-1">
+              Chat Unlocked
             </p>
-            <h3 className="text-3xl font-extrabold text-[#F5F5F5] mb-6">
-              It&apos;s a Roomie Match! 🎉
+            <h3 className="text-2xl sm:text-3xl font-extrabold text-[#F5F5F5] mb-6">
+              You&apos;re Interested!
             </h3>
 
             {/* Two Overlapping Profile Photos */}
@@ -644,7 +712,7 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
             </div>
 
             <p className="text-xs text-[#B8B8B8] leading-relaxed mb-6">
-              You and <span className="text-[#F5F5F5] font-bold">{matchedCandidate.name}</span> both align on flat location in <span className="text-[#FFD43B] font-semibold">{matchedCandidate.area}</span> and share compatible everyday living habits.
+              You marked interest in <span className="text-[#F5F5F5] font-bold">{matchedCandidate.name}</span> in <span className="text-[#FFD43B] font-semibold">{matchedCandidate.area}</span>. Click <span className="text-[#F5F5F5] font-semibold">Say Hello</span> below to open your private chat screen.
             </p>
 
             <div className="space-y-2.5">
@@ -654,17 +722,17 @@ export const DiscoveryDeck: React.FC<DiscoveryDeckProps> = ({
                   setMatchedCandidate(null);
                   onOpenChatWith(target);
                 }}
-                className="w-full py-3 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4" />
-                <span>Say Hello &amp; Plan Flat Visit</span>
+                <span>Say Hello</span>
               </button>
 
               <button
                 onClick={() => setMatchedCandidate(null)}
                 className="w-full py-2.5 px-4 bg-[#383838] hover:bg-[#444444] text-[#B8B8B8] hover:text-[#F5F5F5] font-semibold text-xs rounded-xl cursor-pointer"
               >
-                Keep Swapping
+                Keep Browsing
               </button>
             </div>
 

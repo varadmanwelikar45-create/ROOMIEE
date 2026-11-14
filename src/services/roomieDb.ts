@@ -110,6 +110,7 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
       },
       bio: String(pData.bio || ''),
       photos: Array.isArray(pData.photos) ? pData.photos.map(String) : [],
+      flatPhotos: Array.isArray(pData.flatPhotos) ? pData.flatPhotos.map(String) : [],
       registeredAt:
         pData.createdAt instanceof Timestamp
           ? pData.createdAt.toDate().toISOString()
@@ -137,6 +138,13 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     throw new Error('A valid profile photo under 340KB is required to save your profile.');
   }
 
+  const sanitizedFlatPhotos =
+    user.hasFlat === 'has_flat'
+      ? (user.flatPhotos || [])
+          .filter((p) => typeof p === 'string' && p.length >= 10 && p.length <= 178000)
+          .slice(0, 3)
+      : [];
+
   const publicPayload = {
     uid,
     name: clampStr(user.name, 'ROOMIE User', 2, 80),
@@ -149,6 +157,7 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     area: clampStr(user.flatLocation?.area, 'Koramangala', 2, 100),
     budget: clampStr(user.budget, '₹18,000 / mo', 2, 40),
     photos: sanitizedPhotos,
+    flatPhotos: sanitizedFlatPhotos,
     skills: clampList(user.skills, ['Software Engineering'], 1, 10, 60),
     hobbies: clampList(user.hobbies, ['Reading'], 0, 10, 60),
     interests: clampList(user.interests, ['Tech Startups'], 0, 10, 60),
@@ -245,6 +254,7 @@ export function subscribeToCommunityProfiles(
           area: String(d.area || 'Koramangala'),
           budget: String(d.budget || '₹18,000 / mo'),
           photos: Array.isArray(d.photos) ? d.photos.map(String) : [],
+          flatPhotos: Array.isArray(d.flatPhotos) ? d.flatPhotos.map(String) : [],
           skills: Array.isArray(d.skills) ? d.skills.map(String) : [],
           hobbies: Array.isArray(d.hobbies) ? d.hobbies.map(String) : [],
           interests: Array.isArray(d.interests) ? d.interests.map(String) : [],
@@ -288,8 +298,8 @@ export async function recordSwipeAndConnect(
   fromUid: string,
   targetCandidate: FlatmateCandidate,
   action: 'like' | 'super' | 'pass'
-): Promise<void> {
-  if (!fromUid || !targetCandidate.id || fromUid === targetCandidate.id) return;
+): Promise<FirestoreMatchRecord | null> {
+  if (!fromUid || !targetCandidate.id || fromUid === targetCandidate.id) return null;
 
   const swipeId = `${fromUid}_${targetCandidate.id}`;
   const swipeRef = doc(db, 'swipes', swipeId);
@@ -297,6 +307,7 @@ export async function recordSwipeAndConnect(
   try {
     const existingSwipe = await getDoc(swipeRef);
     const batch = writeBatch(db);
+    let hasWrites = false;
 
     if (!existingSwipe.exists()) {
       batch.set(swipeRef, {
@@ -305,29 +316,41 @@ export async function recordSwipeAndConnect(
         action,
         createdAt: serverTimestamp(),
       });
+      hasWrites = true;
     }
 
+    let resultMatch: FirestoreMatchRecord | null = null;
     if (action === 'like' || action === 'super') {
       const { matchId, userA, userB } = getMatchId(fromUid, targetCandidate.id);
       const matchRef = doc(db, 'matches', matchId);
       const existingMatch = await getDoc(matchRef);
 
       if (!existingMatch.exists()) {
-        batch.set(matchRef, {
+        const newMatchData = {
           matchId,
           userA,
           userB,
           initiatedBy: fromUid,
           isSuper: action === 'super',
-          status: 'active',
+          status: 'active' as const,
           lastMessage: '',
+        };
+        batch.set(matchRef, {
+          ...newMatchData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        hasWrites = true;
+        resultMatch = newMatchData;
+      } else {
+        resultMatch = existingMatch.data() as FirestoreMatchRecord;
       }
     }
 
-    await batch.commit();
+    if (hasWrites) {
+      await batch.commit();
+    }
+    return resultMatch;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `swipes/${swipeId}`);
   }
