@@ -1,9 +1,10 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import path from 'node:path';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 interface VerifyFlatPhotoBody {
   imageBase64?: unknown;
@@ -208,6 +209,19 @@ async function generateStructuredVisionJson<T>(params: {
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '8mb' }));
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (err && typeof err === 'object' && 'type' in err && (err as { type?: string }).type === 'entity.too.large') {
+      res.status(413).json({
+        error: 'Uploaded photo is too large to inspect. Please choose an image under 4MB.',
+      });
+      return;
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({ error: 'Invalid request payload sent to verification service.' });
+      return;
+    }
+    next(err);
+  });
 
   app.post('/api/verify-flat-photo', async (req: Request, res: Response) => {
     const body = (req.body || {}) as VerifyFlatPhotoBody;

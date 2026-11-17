@@ -143,7 +143,7 @@ export function prepareFlatPhotoForAiCheck(file: File): Promise<{ base64: string
         );
       img.onload = () => {
         try {
-          const maxDim = 1024;
+          const maxDim = 896;
           let { width, height } = img;
           if (!width || !height) {
             reject(new Error('Image appears to be empty or corrupted.'));
@@ -167,7 +167,10 @@ export function prepareFlatPhotoForAiCheck(file: File): Promise<{ base64: string
             return;
           }
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          let dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          if (dataUrl.length > 700_000) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.68);
+          }
           const base64 = dataUrl.split(',')[1] || '';
           if (!base64 || base64.length < 32) {
             reject(new Error('Could not extract image pixels for AI inspection.'));

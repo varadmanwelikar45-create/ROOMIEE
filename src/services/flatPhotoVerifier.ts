@@ -60,23 +60,55 @@ export async function verifyAndCompressFlatPhoto(file: File): Promise<FlatPhotoV
 
   const { base64, mimeType } = await prepareFlatPhotoForAiCheck(file);
 
-  const response = await fetch('/api/verify-flat-photo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      imageBase64: base64,
-      mimeType,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 28000);
 
-  const payload = (await response.json().catch(() => ({}))) as Partial<FlatPhotoVerificationResult> & {
-    error?: string;
-  };
+  let response: Response;
+  try {
+    response = await fetch('/api/verify-flat-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: base64,
+        mimeType,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('AI photo verification timed out. Please try again in a few seconds.');
+    }
+    throw new Error('Network error contacting the AI photo verification server. Please try again.');
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const rawBody = await response.text();
+  let payload: (Partial<FlatPhotoVerificationResult> & { error?: string }) = {};
+  try {
+    payload = rawBody ? (JSON.parse(rawBody) as Partial<FlatPhotoVerificationResult> & { error?: string }) : {};
+  } catch {
+    payload = {};
+  }
 
   if (!response.ok) {
-    throw new Error(
-      payload.error || 'Could not run AI photo detection right now. Please try again.'
-    );
+    if (payload.error) {
+      throw new Error(payload.error);
+    }
+    if (response.status === 413) {
+      throw new Error('Photo upload is too large for verification. Please choose a smaller photo.');
+    }
+    if (response.status === 404) {
+      throw new Error('AI photo verification backend is unavailable on this host.');
+    }
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      throw new Error(`AI photo verification service is temporarily busy (HTTP ${response.status}). Please retry in a few seconds.`);
+    }
+    throw new Error(`AI photo verification failed (HTTP ${response.status}). Please try again.`);
+  }
+
+  if (typeof payload.accepted !== 'boolean') {
+    throw new Error('AI photo verification server returned an unexpected response. Please try again.');
   }
 
   const accepted =

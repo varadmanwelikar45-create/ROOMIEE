@@ -30,22 +30,49 @@ export async function verifyIdentityProof(
 
   const { base64, mimeType } = await prepareFlatPhotoForAiCheck(file);
 
-  const response = await fetch('/api/verify-identity', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      imageBase64: base64,
-      mimeType,
-      verificationType,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 28000);
 
-  const payload = (await response.json().catch(() => ({}))) as Partial<IdentityCheckResponse> & {
-    error?: string;
-  };
+  let response: Response;
+  try {
+    response = await fetch('/api/verify-identity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: base64,
+        mimeType,
+        verificationType,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Identity verification timed out. Please try again in a few seconds.');
+    }
+    throw new Error('Network error contacting the identity verification server. Please try again.');
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const rawBody = await response.text();
+  let payload: (Partial<IdentityCheckResponse> & { error?: string }) = {};
+  try {
+    payload = rawBody ? (JSON.parse(rawBody) as Partial<IdentityCheckResponse> & { error?: string }) : {};
+  } catch {
+    payload = {};
+  }
 
   if (!response.ok) {
-    throw new Error(payload.error || 'Identity verification service failed. Please try again.');
+    if (payload.error) {
+      throw new Error(payload.error);
+    }
+    if (response.status === 413) {
+      throw new Error('Identity photo is too large. Please upload a smaller image.');
+    }
+    if (response.status === 404) {
+      throw new Error('Identity verification backend is unavailable on this host.');
+    }
+    throw new Error(`Identity verification service failed (HTTP ${response.status}). Please try again.`);
   }
 
   return {
