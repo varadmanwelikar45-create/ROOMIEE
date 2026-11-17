@@ -1,4 +1,8 @@
-import { compressFlatImageFile, prepareFlatPhotoForAiCheck } from '../utils/storage';
+import {
+  compressFlatImageFile,
+  inferImageMimeType,
+  prepareFlatPhotoForAiCheck,
+} from '../utils/storage';
 
 export interface FlatPhotoVerificationResult {
   accepted: boolean;
@@ -17,7 +21,8 @@ export interface FlatPhotoVerificationResult {
  * and never returned as an accepted upload.
  */
 export async function verifyAndCompressFlatPhoto(file: File): Promise<FlatPhotoVerificationResult> {
-  if (!file.type.startsWith('image/')) {
+  const effectiveMime = inferImageMimeType(file);
+  if (!effectiveMime.startsWith('image/')) {
     return {
       accepted: false,
       isAiGenerated: false,
@@ -29,15 +34,15 @@ export async function verifyAndCompressFlatPhoto(file: File): Promise<FlatPhotoV
     };
   }
 
-  if (file.type === 'image/svg+xml') {
+  if (effectiveMime === 'image/svg+xml' || effectiveMime === 'image/gif') {
     return {
       accepted: false,
       isAiGenerated: false,
       isRealFlatPhoto: false,
       isFlatRelated: false,
       confidence: 100,
-      reason: 'SVG vector graphics are not accepted. Please upload a real camera photo of your flat.',
-      detectedIndicators: ['Vector SVG file'],
+      reason: 'Vector SVG or GIF files are not accepted. Please upload a real camera photo of your flat.',
+      detectedIndicators: ['Non-photographic image format'],
     };
   }
 

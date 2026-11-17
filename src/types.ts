@@ -1,6 +1,35 @@
 export type Gender = 'male' | 'female' | 'other';
 export type FlatStatus = 'has_flat' | 'needs_flat';
 
+export type VerificationMethod =
+  | 'google_only'
+  | 'selfie_liveness'
+  | 'gov_id_ai_check'
+  | 'workplace_id_ai_check';
+
+export interface IdentityVerificationInfo {
+  identityVerified: boolean;
+  verificationMethod: VerificationMethod;
+  verifiedAt?: string;
+}
+
+export interface PersonalityProfile {
+  vibe: string; // e.g. 'Ambivert · Balanced Social'
+  guestPolicy: string; // e.g. 'Occasional Guests (Inform First)'
+  noiseTolerance: string; // e.g. 'Moderate Ambient'
+  conflictStyle: string; // e.g. 'Direct & Calm Conversation'
+  choreStyle: string; // e.g. 'Shared Maid + Weekend Tidy'
+}
+
+export interface CostBreakdown {
+  monthlyRent: number;
+  securityDeposit: number;
+  maintenanceFee: number;
+  utilitiesEstimate: number;
+  brokerageFee: number;
+  bhkType: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -26,6 +55,13 @@ export interface UserProfile {
     smoking: string;
     pets: string;
   };
+  personality: PersonalityProfile;
+  costBreakdown: CostBreakdown;
+  identityVerification: IdentityVerificationInfo;
+  emergencyContact?: string;
+  blockedUids?: string[];
+  listingDurationDays: 7 | 14 | 30;
+  expiresAt: string;
   bio: string;
   photos: string[];
   flatPhotos?: string[];
@@ -56,12 +92,52 @@ export interface FlatmateCandidate {
     smoking: string;
     pets: string;
   };
+  personality?: PersonalityProfile;
+  costBreakdown?: CostBreakdown;
+  identityVerification?: IdentityVerificationInfo;
+  listingDurationDays?: 7 | 14 | 30;
+  expiresAt?: string;
   compatibilityScore?: number;
+  matchReasons?: string[];
   flatDetails?: {
     bhk: string; // "2 BHK" or "3 BHK"
     deposit: string; // "₹50,000"
     amenities: string[];
   };
+}
+
+export interface RoomieGroup {
+  groupId: string;
+  sourceMatchId: string;
+  createdBy: string;
+  partnerUid: string;
+  memberUids: string[];
+  memberNames: string[];
+  memberPhotos: string[];
+  gender: Gender | 'mixed';
+  city: string;
+  area: string;
+  hasFlat: FlatStatus;
+  budgetPerPerson: string;
+  bhkType: string;
+  targetSize: number;
+  openSpots: number;
+  bio: string;
+  vibeSummary: string;
+  flatPhotos: string[];
+  costBreakdown?: CostBreakdown;
+  status: 'seeking' | 'full' | 'archived';
+  expiresAt: string;
+  createdAt?: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  senderUid: string;
+  senderName: string;
+  visibleToUids: string[];
+  text: string;
+  createdAt?: import('firebase/firestore').Timestamp | null;
 }
 
 export interface MatchChat {

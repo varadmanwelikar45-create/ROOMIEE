@@ -16,12 +16,16 @@ import {
   Loader2,
   LogOut,
   ExternalLink,
+  Clock,
+  IndianRupee,
+  BrainCircuit,
 } from 'lucide-react';
-import { UserProfile, Gender, FlatStatus } from '../types';
+import { UserProfile, Gender, FlatStatus, PersonalityProfile } from '../types';
 import { compressImageFile } from '../utils/storage';
 import { auth, googleProvider } from '../firebase';
-import { loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
+import { computeExpiryIso, loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
 import { FlatPhotoUploader } from './FlatPhotoUploader';
+import { DEFAULT_PERSONALITY, formatINR, parseBudgetMonthly } from '../utils/compatibility';
 
 interface AuthScreenProps {
   firebaseUser: FirebaseUser | null;
@@ -67,6 +71,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [workRoutine, setWorkRoutine] = useState('Hybrid (WFH 2 days/week)');
   const defaultCleanliness = 'Daily kitchen cleanup & shared maid';
   const [bio, setBio] = useState('');
+
+  // Personality, Cost Breakdown & Listing Expiry
+  const [personality, setPersonality] = useState<PersonalityProfile>({ ...DEFAULT_PERSONALITY });
+  const [listingDurationDays, setListingDurationDays] = useState<7 | 14 | 30>(14);
+  const [bhkType, setBhkType] = useState('2 / 3 BHK Shared Flat');
+  const [securityDeposit, setSecurityDeposit] = useState(40000);
+  const [maintenanceFee, setMaintenanceFee] = useState(1800);
+  const [utilitiesEstimate, setUtilitiesEstimate] = useState(2800);
+  const [brokerageFee, setBrokerageFee] = useState(0);
 
   // Photo upload states (Required for registration)
   const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
@@ -183,7 +196,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     try {
       // Check if this user already has a profile in Firestore
       const existingProfile = await loadUserProfileFromDb(signedInUser.uid);
-      if (existingProfile) {
+      if (existingProfile && existingProfile.photos && existingProfile.photos.length > 0) {
         const updatedProfile: UserProfile = {
           ...existingProfile,
           hasFlat,
@@ -197,8 +210,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         await saveUserProfileToDb(updatedProfile);
         onLoginSuccess(updatedProfile);
       } else {
-        // New user -> proceed to mandatory photo & profile registration
-        setName(signedInUser.displayName || '');
+        // New user or missing profile photo -> proceed to mandatory photo & profile registration
+        if (existingProfile) {
+          setPhone(existingProfile.phone || '');
+          setBudget(existingProfile.budget || '₹18,000 / mo');
+          setBio(existingProfile.bio || '');
+        }
+        setName(existingProfile?.name || signedInUser.displayName || '');
         setEmail(signedInUser.email || '');
         setRegisterStep(1);
       }
@@ -256,6 +274,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
+    const monthlyRent = parseBudgetMonthly(budget);
     const newUser: UserProfile = {
       id: firebaseUser.uid,
       name: name.trim(),
@@ -268,7 +287,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         city,
         area: area.trim(),
       },
-      budget,
+      budget: `${formatINR(monthlyRent)} / mo`,
       skills: selectedSkills.length > 0 ? selectedSkills : ['Software Engineering', 'Problem Solving'],
       hobbies: defaultHobbies,
       interests: defaultInterests,
@@ -280,6 +299,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         smoking: 'Non-smoker',
         pets: 'Friendly with pets',
       },
+      personality,
+      costBreakdown: {
+        monthlyRent,
+        securityDeposit: Math.max(0, securityDeposit),
+        maintenanceFee: Math.max(0, maintenanceFee),
+        utilitiesEstimate: Math.max(0, utilitiesEstimate),
+        brokerageFee: Math.max(0, brokerageFee),
+        bhkType: bhkType.trim() || '2 / 3 BHK Shared Flat',
+      },
+      identityVerification: {
+        identityVerified: false,
+        verificationMethod: 'google_only',
+        verifiedAt: '',
+      },
+      emergencyContact: '',
+      blockedUids: [],
+      listingDurationDays,
+      expiresAt: computeExpiryIso(listingDurationDays),
       bio:
         bio.trim() ||
         `Hi, I am ${name.trim()}! Looking for a compatible ${preferredFlatmateGender} flatmate in ${area.trim()}, ${city}.`,
@@ -900,7 +937,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       </label>
                       <select
                         value={budget}
-                        onChange={(e) => setBudget(e.target.value)}
+                        onChange={(e) => {
+                          setBudget(e.target.value);
+                          setSecurityDeposit(parseBudgetMonthly(e.target.value) * 2);
+                        }}
                         className="w-full px-2.5 py-1.5 bg-[#242424] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
                       >
                         <option value="₹12,000 / mo">₹12,000 / mo</option>
@@ -910,6 +950,142 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         <option value="₹28,000 / mo">₹28,000 / mo</option>
                         <option value="₹35,000+ / mo">₹35,000+ / mo</option>
                       </select>
+                    </div>
+                  </div>
+
+                  {/* PERSONALITY MATCHING PROFILE */}
+                  <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444] space-y-2.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+                      <BrainCircuit className="w-4 h-4 text-[#FFD43B]" />
+                      <span>Personality-Based Matching</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-1">Social Vibe</label>
+                        <select
+                          value={personality.vibe}
+                          onChange={(e) => setPersonality((p) => ({ ...p, vibe: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        >
+                          <option value="Introvert · Calm & Private">Introvert · Calm &amp; Private</option>
+                          <option value="Ambivert · Balanced Social">Ambivert · Balanced Social</option>
+                          <option value="Extrovert · Lively & Friendly">Extrovert · Lively &amp; Friendly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-1">Guest Policy</label>
+                        <select
+                          value={personality.guestPolicy}
+                          onChange={(e) => setPersonality((p) => ({ ...p, guestPolicy: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        >
+                          <option value="Rare Overnight Guests">Rare Overnight Guests</option>
+                          <option value="Occasional Guests (Inform First)">Occasional Guests (Inform First)</option>
+                          <option value="Friends Welcome Anytime">Friends Welcome Anytime</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-1">Noise Preference</label>
+                        <select
+                          value={personality.noiseTolerance}
+                          onChange={(e) => setPersonality((p) => ({ ...p, noiseTolerance: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        >
+                          <option value="Quiet Study / WFH Sanctuary">Quiet Study / WFH Sanctuary</option>
+                          <option value="Moderate Ambient">Moderate Ambient</option>
+                          <option value="Lively Music / Hangouts">Lively Music / Hangouts</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-1">Chore &amp; Cleaning Style</label>
+                        <select
+                          value={personality.choreStyle}
+                          onChange={(e) => setPersonality((p) => ({ ...p, choreStyle: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        >
+                          <option value="Shared Maid + Weekend Tidy">Shared Maid + Weekend Tidy</option>
+                          <option value="Clean-as-you-go Strictly">Clean-as-you-go Strictly</option>
+                          <option value="Weekly Cleaning Schedule">Weekly Cleaning Schedule</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* COMPLETE COST BREAKDOWN & AUTO-EXPIRY */}
+                  <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444] space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+                        <IndianRupee className="w-3.5 h-3.5 text-[#FFD43B]" />
+                        <span>Cost Breakdown &amp; Listing Expiry</span>
+                      </label>
+                      <span className="text-[10px] text-emerald-400 font-semibold inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>Auto-expires in {listingDurationDays}d</span>
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Deposit (₹)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={securityDeposit}
+                          onChange={(e) => setSecurityDeposit(Number(e.target.value) || 0)}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Maint. / mo (₹)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={maintenanceFee}
+                          onChange={(e) => setMaintenanceFee(Number(e.target.value) || 0)}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Utilities Est. (₹)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={utilitiesEstimate}
+                          onChange={(e) => setUtilitiesEstimate(Number(e.target.value) || 0)}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Brokerage (₹)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={brokerageFee}
+                          onChange={(e) => setBrokerageFee(Number(e.target.value) || 0)}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Flat Type</label>
+                        <input
+                          type="text"
+                          value={bhkType}
+                          onChange={(e) => setBhkType(e.target.value)}
+                          placeholder="2 / 3 BHK"
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Auto-Expiry</label>
+                        <select
+                          value={listingDurationDays}
+                          onChange={(e) => setListingDurationDays(Number(e.target.value) as 7 | 14 | 30)}
+                          className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                        >
+                          <option value={7}>7 Days</option>
+                          <option value={14}>14 Days</option>
+                          <option value={30}>30 Days</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 

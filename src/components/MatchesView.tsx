@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FlatmateCandidate } from '../types';
-import { Send, MapPin, Sparkles, Mail, MessageSquare } from 'lucide-react';
+import { Send, MapPin, Sparkles, Mail, MessageSquare, Users, ShieldCheck } from 'lucide-react';
 import {
   FirestoreChatMessage,
   FirestoreMatchRecord,
@@ -17,6 +17,7 @@ interface MatchesViewProps {
   onExploreMore: () => void;
   onEmailInvite?: (candidate: FlatmateCandidate) => void;
   onOpenFullChat?: (candidate: FlatmateCandidate) => void;
+  onFormDuoWith?: (candidate: FlatmateCandidate) => void;
 }
 
 export const MatchesView: React.FC<MatchesViewProps> = ({
@@ -27,6 +28,7 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
   onExploreMore,
   onEmailInvite,
   onOpenFullChat,
+  onFormDuoWith,
 }) => {
   const [selectedChat, setSelectedChat] = useState<FlatmateCandidate | null>(
     initialChatCandidate || (matchedCandidates.length > 0 ? matchedCandidates[0] : null)
@@ -84,6 +86,11 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
       unsubscribe();
     };
   }, [activeMatchPair, currentUserId]);
+
+  useEffect(() => {
+    setSendError('');
+    setInputMsg('');
+  }, [selectedChat?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -239,6 +246,9 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                       <h4 className="text-sm font-bold text-[#F5F5F5] flex items-center gap-1.5">
                         <span>{selectedChat.name}</span>
                         <span className="text-xs font-normal text-[#8e8e8e]">({selectedChat.age})</span>
+                        {selectedChat.identityVerification?.identityVerified && (
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
                       </h4>
                       <p className="text-[11px] text-[#FFD43B] flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
@@ -249,7 +259,18 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 text-right text-[11px] text-[#8e8e8e]">
+                  <div className="flex items-center gap-1.5 text-right text-[11px] text-[#8e8e8e]">
+                    {onFormDuoWith && (
+                      <button
+                        type="button"
+                        onClick={() => onFormDuoWith(selectedChat)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Team up as a Duo and find 1 more flatmate together"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Team Up +1</span>
+                      </button>
+                    )}
                     {onOpenFullChat && (
                       <button
                         type="button"
@@ -269,10 +290,8 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                         title="Send flat visit invite via Gmail"
                       >
                         <Mail className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Gmail Invite</span>
                       </button>
                     )}
-                    <span className="text-emerald-400 font-bold hidden sm:inline">● Interested</span>
                   </div>
                 </div>
 

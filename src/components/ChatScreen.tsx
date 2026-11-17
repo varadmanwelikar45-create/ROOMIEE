@@ -9,6 +9,10 @@ import {
   Mail,
   CheckCircle2,
   Loader2,
+  ShieldCheck,
+  Users,
+  Flag,
+  Ban,
 } from 'lucide-react';
 import { FlatmateCandidate, UserProfile } from '../types';
 import {
@@ -27,6 +31,9 @@ interface ChatScreenProps {
   matchRecords: FirestoreMatchRecord[];
   onBack: () => void;
   onEmailInvite?: (candidate: FlatmateCandidate) => void;
+  onFormDuoWith?: (candidate: FlatmateCandidate) => void;
+  onReportCandidate?: (candidate: FlatmateCandidate) => void;
+  onBlockCandidate?: (candidate: FlatmateCandidate) => void;
 }
 
 export const ChatScreen: React.FC<ChatScreenProps> = ({
@@ -36,6 +43,9 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   matchRecords,
   onBack,
   onEmailInvite,
+  onFormDuoWith,
+  onReportCandidate,
+  onBlockCandidate,
 }) => {
   const [liveMessages, setLiveMessages] = useState<FirestoreChatMessage[]>([]);
   const [inputMsg, setInputMsg] = useState('');
@@ -43,7 +53,15 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [isPreparingChat, setIsPreparingChat] = useState(false);
   const [sendError, setSendError] = useState('');
   const [matchReady, setMatchReady] = useState(false);
+  const [showSafetyBar, setShowSafetyBar] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setMatchReady(false);
+    setSendError('');
+    setInputMsg('');
+    setShowSafetyBar(false);
+  }, [candidate.id]);
 
   const pairInfo = useMemo(() => {
     const { matchId, userA, userB } = getMatchId(currentUser.id, candidate.id);
@@ -231,7 +249,11 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
                   {candidate.name}
                 </h2>
                 <span className="text-xs text-[#8e8e8e]">({candidate.age})</span>
-                <CheckCircle2 className="w-3.5 h-3.5 text-[#FFD43B] shrink-0" />
+                {candidate.identityVerification?.identityVerified ? (
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#FFD43B] shrink-0" />
+                )}
               </div>
 
               <div className="flex items-center gap-2 text-[11px] text-[#B8B8B8] truncate">
@@ -254,20 +276,85 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onFormDuoWith && (
+              <button
+                type="button"
+                onClick={() => onFormDuoWith(candidate)}
+                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/40 inline-flex items-center gap-1 cursor-pointer"
+                title="Team up as a Duo and find a 3rd flatmate together"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Team Up +1</span>
+              </button>
+            )}
             {onEmailInvite && (
               <button
                 type="button"
                 onClick={() => onEmailInvite(candidate)}
-                className="px-3 py-1.5 rounded-xl bg-[#383838] hover:bg-[#444444] text-[#FFD43B] text-xs font-semibold border border-[#484848] inline-flex items-center gap-1.5 cursor-pointer"
+                className="px-2.5 py-1.5 rounded-xl bg-[#383838] hover:bg-[#444444] text-[#FFD43B] text-xs font-semibold border border-[#484848] inline-flex items-center gap-1.5 cursor-pointer"
                 title="Send invite via Gmail"
               >
                 <Mail className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Gmail Invite</span>
+                <span className="hidden sm:inline">Gmail</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setShowSafetyBar((prev) => !prev)}
+              className={`p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
+                showSafetyBar
+                  ? 'bg-[#FFD43B]/20 border-[#FFD43B] text-[#FFD43B]'
+                  : 'bg-[#383838] hover:bg-[#444444] border-[#484848] text-[#B8B8B8]'
+              }`}
+              title="Safety Checklist, Report & Block"
+              aria-label="Safety Options"
+            >
+              <ShieldCheck className="w-4 h-4" />
+            </button>
           </div>
         </div>
+
+        {/* Collapsible Safety Bar */}
+        {showSafetyBar && (
+          <div className="px-4 py-3 bg-[#232323] border-b border-[#3d3d3d] text-xs space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-emerald-300 inline-flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                <span>
+                  {candidate.identityVerification?.identityVerified
+                    ? 'AI + ID Verified Profile'
+                    : 'Google Verified · Ask for a video tour before transferring deposit'}
+                </span>
+              </span>
+              <div className="flex items-center gap-3">
+                {onReportCandidate && (
+                  <button
+                    type="button"
+                    onClick={() => onReportCandidate(candidate)}
+                    className="text-amber-300 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    <span>Report</span>
+                  </button>
+                )}
+                {onBlockCandidate && (
+                  <button
+                    type="button"
+                    onClick={() => onBlockCandidate(candidate)}
+                    className="text-red-400 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Block User</span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-[#8e8e8e]">
+              Safe Flat Visit Tips: Meet during daytime, inspect original landlord agreement, and keep your emergency contact updated in Profile.
+            </p>
+          </div>
+        )}
 
         {/* Messages Body */}
         <div className="flex-1 p-4 sm:p-5 overflow-y-auto bg-[#262626] space-y-3">

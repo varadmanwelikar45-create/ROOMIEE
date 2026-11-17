@@ -13,11 +13,31 @@ import {
   Home, 
   Search,
   Camera,
-  Upload
+  Upload,
+  Clock,
+  RefreshCw,
+  BrainCircuit,
+  ShieldCheck,
+  IndianRupee,
 } from 'lucide-react';
-import { UserProfile, FlatStatus } from '../types';
+import {
+  UserProfile,
+  FlatStatus,
+  PersonalityProfile,
+  CostBreakdown,
+  IdentityVerificationInfo,
+} from '../types';
 import { compressImageFile } from '../utils/storage';
 import { FlatPhotoUploader } from './FlatPhotoUploader';
+import { CostBreakdownCard } from './CostBreakdownCard';
+import { IdentityTrustPanel } from './IdentityTrustPanel';
+import {
+  DEFAULT_COST_BREAKDOWN,
+  DEFAULT_PERSONALITY,
+  formatINR,
+  getListingExpiryStatus,
+} from '../utils/compatibility';
+import { computeExpiryIso } from '../services/roomieDb';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
@@ -35,21 +55,39 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
   const [editedHasFlat, setEditedHasFlat] = useState<FlatStatus>(currentUser.hasFlat);
   const [editedPhotos, setEditedPhotos] = useState<string[]>(currentUser.photos || []);
   const [editedFlatPhotos, setEditedFlatPhotos] = useState<string[]>(currentUser.flatPhotos || []);
+  const [editedPersonality, setEditedPersonality] = useState<PersonalityProfile>(
+    currentUser.personality || { ...DEFAULT_PERSONALITY }
+  );
+  const [editedCost, setEditedCost] = useState<CostBreakdown>(
+    currentUser.costBreakdown || { ...DEFAULT_COST_BREAKDOWN }
+  );
+  const [editedDuration, setEditedDuration] = useState<7 | 14 | 30>(
+    currentUser.listingDurationDays || 14
+  );
   const [photoError, setPhotoError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const resetDraftFromUser = (u: UserProfile) => {
+    setEditedBio(u.bio);
+    setEditedSleep(u.lifestyle.sleepSchedule);
+    setEditedDiet(u.lifestyle.kitchenDiet);
+    setEditedWork(u.lifestyle.workRoutine);
+    setEditedArea(u.flatLocation.area);
+    setEditedCity(u.flatLocation.city);
+    setEditedHasFlat(u.hasFlat);
+    setEditedPhotos(u.photos || []);
+    setEditedFlatPhotos(u.flatPhotos || []);
+    setEditedPersonality(u.personality || { ...DEFAULT_PERSONALITY });
+    setEditedCost(u.costBreakdown || { ...DEFAULT_COST_BREAKDOWN });
+    setEditedDuration(u.listingDurationDays || 14);
+    setPhotoError('');
+    setSaveError('');
+  };
+
   useEffect(() => {
-    setEditedBio(currentUser.bio);
-    setEditedSleep(currentUser.lifestyle.sleepSchedule);
-    setEditedDiet(currentUser.lifestyle.kitchenDiet);
-    setEditedWork(currentUser.lifestyle.workRoutine);
-    setEditedArea(currentUser.flatLocation.area);
-    setEditedCity(currentUser.flatLocation.city);
-    setEditedHasFlat(currentUser.hasFlat);
-    setEditedPhotos(currentUser.photos || []);
-    setEditedFlatPhotos(currentUser.flatPhotos || []);
+    resetDraftFromUser(currentUser);
   }, [currentUser]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,6 +119,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
         city: editedCity.trim() || currentUser.flatLocation.city,
         area: editedArea.trim() || currentUser.flatLocation.area,
       },
+      budget: `${formatINR(editedCost.monthlyRent)} / mo`,
       photos: editedPhotos.length > 0 ? editedPhotos : currentUser.photos,
       flatPhotos: editedHasFlat === 'has_flat' ? editedFlatPhotos : [],
       lifestyle: {
@@ -89,6 +128,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
         kitchenDiet: editedDiet,
         workRoutine: editedWork,
       },
+      personality: editedPersonality,
+      costBreakdown: editedCost,
+      listingDurationDays: editedDuration,
+      expiresAt:
+        editedDuration !== currentUser.listingDurationDays
+          ? computeExpiryIso(editedDuration)
+          : currentUser.expiresAt,
     };
     try {
       await onUpdateProfile(updated);
@@ -100,6 +146,40 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleRenewListing = async (days: 7 | 14 | 30 = currentUser.listingDurationDays || 14) => {
+    setSaveError('');
+    setIsSaving(true);
+    try {
+      await onUpdateProfile({
+        ...currentUser,
+        listingDurationDays: days,
+        expiresAt: computeExpiryIso(days),
+      });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch {
+      setSaveError('Could not renew listing expiry. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleIdentityVerified = async (nextInfo: IdentityVerificationInfo) => {
+    await onUpdateProfile({
+      ...currentUser,
+      identityVerification: nextInfo,
+    });
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
+  };
+
+  const handleSaveEmergencyContact = async (contact: string) => {
+    await onUpdateProfile({
+      ...currentUser,
+      emergencyContact: contact,
+    });
   };
 
   const handleInstantFlatPhotosChange = async (nextFlatPhotos: string[]) => {
@@ -119,6 +199,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
       setIsSaving(false);
     }
   };
+
+  const expiryStatus = getListingExpiryStatus(currentUser.expiresAt);
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 py-6">
@@ -150,11 +232,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
               )}
             </div>
             <div>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <h2 className="text-2xl font-bold text-[#F5F5F5]">{currentUser.name}</h2>
                 <span className="text-xs bg-[#FFD43B] text-[#242424] font-extrabold px-2 py-0.5 rounded-full">
                   {currentUser.gender === 'male' ? '👦 Boy' : '👧 Girl'}
                 </span>
+                {currentUser.identityVerification?.identityVerified ? (
+                  <span className="text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>ID Verified</span>
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-semibold bg-[#242424] text-[#B8B8B8] border border-[#444444] px-2.5 py-0.5 rounded-full">
+                    Google Verified
+                  </span>
+                )}
               </div>
 
               {/* Has Flat Yes/No Tag */}
@@ -175,7 +267,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
           </div>
 
           <button
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => {
+              if (isEditing) {
+                resetDraftFromUser(currentUser);
+                setIsEditing(false);
+              } else {
+                setIsEditing(true);
+              }
+            }}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] border border-[#484848] transition-colors cursor-pointer"
           >
             {isEditing ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5 text-[#FFD43B]" />}
@@ -326,6 +425,136 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 />
               </div>
 
+              {/* Personality Preferences Editor */}
+              <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444] space-y-2.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+                  <BrainCircuit className="w-4 h-4" />
+                  <span>Personality Matching Preferences</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-1">Social Vibe</label>
+                    <select
+                      value={editedPersonality.vibe}
+                      onChange={(e) => setEditedPersonality((p) => ({ ...p, vibe: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    >
+                      <option value="Introvert · Calm & Private">Introvert · Calm &amp; Private</option>
+                      <option value="Ambivert · Balanced Social">Ambivert · Balanced Social</option>
+                      <option value="Extrovert · Lively & Friendly">Extrovert · Lively &amp; Friendly</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-1">Guest Policy</label>
+                    <select
+                      value={editedPersonality.guestPolicy}
+                      onChange={(e) => setEditedPersonality((p) => ({ ...p, guestPolicy: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    >
+                      <option value="Rare Overnight Guests">Rare Overnight Guests</option>
+                      <option value="Occasional Guests (Inform First)">Occasional Guests (Inform First)</option>
+                      <option value="Friends Welcome Anytime">Friends Welcome Anytime</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-1">Noise Preference</label>
+                    <select
+                      value={editedPersonality.noiseTolerance}
+                      onChange={(e) => setEditedPersonality((p) => ({ ...p, noiseTolerance: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    >
+                      <option value="Quiet Study / WFH Sanctuary">Quiet Study / WFH Sanctuary</option>
+                      <option value="Moderate Ambient">Moderate Ambient</option>
+                      <option value="Lively Music / Hangouts">Lively Music / Hangouts</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-1">Chore Style</label>
+                    <select
+                      value={editedPersonality.choreStyle}
+                      onChange={(e) => setEditedPersonality((p) => ({ ...p, choreStyle: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    >
+                      <option value="Shared Maid + Weekend Tidy">Shared Maid + Weekend Tidy</option>
+                      <option value="Clean-as-you-go Strictly">Clean-as-you-go Strictly</option>
+                      <option value="Weekly Cleaning Schedule">Weekly Cleaning Schedule</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cost Breakdown & Auto-Expiry Editor */}
+              <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444] space-y-2.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+                  <IndianRupee className="w-4 h-4" />
+                  <span>Complete Cost Breakdown &amp; Expiry</span>
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Monthly Rent (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editedCost.monthlyRent}
+                      onChange={(e) => setEditedCost((c) => ({ ...c, monthlyRent: Number(e.target.value) || 0 }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Security Deposit (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editedCost.securityDeposit}
+                      onChange={(e) => setEditedCost((c) => ({ ...c, securityDeposit: Number(e.target.value) || 0 }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Maintenance / mo (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editedCost.maintenanceFee}
+                      onChange={(e) => setEditedCost((c) => ({ ...c, maintenanceFee: Number(e.target.value) || 0 }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Utilities Est. (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editedCost.utilitiesEstimate}
+                      onChange={(e) => setEditedCost((c) => ({ ...c, utilitiesEstimate: Number(e.target.value) || 0 }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Brokerage (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editedCost.brokerageFee}
+                      onChange={(e) => setEditedCost((c) => ({ ...c, brokerageFee: Number(e.target.value) || 0 }))}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-[#8e8e8e] mb-0.5">Auto-Expiry Window</label>
+                    <select
+                      value={editedDuration}
+                      onChange={(e) => setEditedDuration(Number(e.target.value) as 7 | 14 | 30)}
+                      className="w-full px-2.5 py-1.5 bg-[#303030] border border-[#444444] rounded-lg text-xs text-[#F5F5F5]"
+                    >
+                      <option value={7}>7 Days</option>
+                      <option value={14}>14 Days</option>
+                      <option value={30}>30 Days</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {saveError && (
                 <p className="text-xs text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-800">
                   {saveError}
@@ -336,7 +565,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 <button
                   type="button"
                   disabled={isSaving}
-                  onClick={() => setIsEditing(false)}
+                  onClick={() => {
+                    resetDraftFromUser(currentUser);
+                    setIsEditing(false);
+                  }}
                   className="px-4 py-2 text-xs bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] rounded-lg disabled:opacity-50"
                 >
                   Cancel
@@ -466,6 +698,101 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   </p>
                 </div>
               </div>
+
+              {/* PERSONALITY MATCHING TRAITS */}
+              <div className="pt-2 border-t border-[#383838]">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2.5 flex items-center gap-1.5">
+                  <BrainCircuit className="w-4 h-4" />
+                  <span>Personality Matching Profile</span>
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
+                    <span className="text-[10px] text-[#8e8e8e] block">Social Vibe</span>
+                    <span className="text-[#F5F5F5] font-semibold">
+                      {(currentUser.personality || DEFAULT_PERSONALITY).vibe}
+                    </span>
+                  </div>
+                  <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
+                    <span className="text-[10px] text-[#8e8e8e] block">Guest Policy</span>
+                    <span className="text-[#F5F5F5] font-semibold">
+                      {(currentUser.personality || DEFAULT_PERSONALITY).guestPolicy}
+                    </span>
+                  </div>
+                  <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
+                    <span className="text-[10px] text-[#8e8e8e] block">Noise Preference</span>
+                    <span className="text-[#F5F5F5] font-semibold">
+                      {(currentUser.personality || DEFAULT_PERSONALITY).noiseTolerance}
+                    </span>
+                  </div>
+                  <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
+                    <span className="text-[10px] text-[#8e8e8e] block">Chore Style</span>
+                    <span className="text-[#F5F5F5] font-semibold">
+                      {(currentUser.personality || DEFAULT_PERSONALITY).choreStyle}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* COMPLETE COST BREAKDOWN */}
+              <CostBreakdownCard
+                costBreakdown={currentUser.costBreakdown}
+                fallbackBudget={currentUser.budget}
+                hasFlat={currentUser.hasFlat}
+              />
+
+              {/* AUTOMATIC LISTING EXPIRY */}
+              <div
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  expiryStatus.expired
+                    ? 'bg-red-950/30 border-red-700'
+                    : expiryStatus.expiringSoon
+                    ? 'bg-amber-950/30 border-amber-700'
+                    : 'bg-[#242424] border-[#444444]'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#F5F5F5]">
+                    <Clock className={`w-4 h-4 ${expiryStatus.expired ? 'text-red-400' : 'text-[#FFD43B]'}`} />
+                    <span>Automatic Listing Expiry · {expiryStatus.label}</span>
+                  </div>
+                  <p className="text-[11px] text-[#B8B8B8]">
+                    Stale listings automatically hide after {currentUser.listingDurationDays || 14} days so matches stay active and real.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => handleRenewListing(14)}
+                    className="px-3 py-1.5 rounded-xl bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs inline-flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Renew +14d</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => handleRenewListing(30)}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] font-semibold text-xs border border-[#484848] cursor-pointer disabled:opacity-60"
+                  >
+                    +30d
+                  </button>
+                </div>
+              </div>
+
+              {/* STRONG IDENTITY VERIFICATION & SAFETY CONTACTS */}
+              <IdentityTrustPanel
+                identityVerification={
+                  currentUser.identityVerification || {
+                    identityVerified: false,
+                    verificationMethod: 'google_only',
+                    verifiedAt: '',
+                  }
+                }
+                emergencyContact={currentUser.emergencyContact}
+                onVerified={handleIdentityVerified}
+                onSaveEmergencyContact={handleSaveEmergencyContact}
+              />
             </>
           )}
 

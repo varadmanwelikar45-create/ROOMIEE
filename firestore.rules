@@ -61,6 +61,44 @@ service cloud.firestore {
         && (arr.size() < 3 || (arr[2] is string && arr[2].size() >= 10 && arr[2].size() <= 180000));
     }
 
+    function isValidPersonality(p) {
+      return p is map
+        && p.keys().hasAll(['vibe', 'guestPolicy', 'noiseTolerance', 'conflictStyle', 'choreStyle'])
+        && p.keys().hasOnly(['vibe', 'guestPolicy', 'noiseTolerance', 'conflictStyle', 'choreStyle'])
+        && isValidString(p.vibe, 2, 80)
+        && isValidString(p.guestPolicy, 2, 80)
+        && isValidString(p.noiseTolerance, 2, 80)
+        && isValidString(p.conflictStyle, 2, 80)
+        && isValidString(p.choreStyle, 2, 80);
+    }
+
+    function isValidCostBreakdown(c) {
+      return c is map
+        && c.keys().hasAll([
+          'monthlyRent', 'securityDeposit', 'maintenanceFee',
+          'utilitiesEstimate', 'brokerageFee', 'bhkType'
+        ])
+        && c.keys().hasOnly([
+          'monthlyRent', 'securityDeposit', 'maintenanceFee',
+          'utilitiesEstimate', 'brokerageFee', 'bhkType'
+        ])
+        && c.monthlyRent is number && c.monthlyRent >= 0 && c.monthlyRent <= 500000
+        && c.securityDeposit is number && c.securityDeposit >= 0 && c.securityDeposit <= 2000000
+        && c.maintenanceFee is number && c.maintenanceFee >= 0 && c.maintenanceFee <= 100000
+        && c.utilitiesEstimate is number && c.utilitiesEstimate >= 0 && c.utilitiesEstimate <= 100000
+        && c.brokerageFee is number && c.brokerageFee >= 0 && c.brokerageFee <= 500000
+        && isValidString(c.bhkType, 2, 80);
+    }
+
+    function isValidIdentityVerification(v) {
+      return v is map
+        && v.keys().hasAll(['identityVerified', 'verificationMethod'])
+        && v.keys().hasOnly(['identityVerified', 'verificationMethod', 'verifiedAt'])
+        && v.identityVerified is bool
+        && v.verificationMethod in ['google_only', 'selfie_liveness', 'gov_id_ai_check', 'workplace_id_ai_check']
+        && (!('verifiedAt' in v) || isValidString(v.verifiedAt, 0, 60));
+    }
+
     // ==================== VALIDATION BLUEPRINTS ====================
     function isValidPublicProfile(data) {
       return data.keys().hasAll([
@@ -75,7 +113,9 @@ service cloud.firestore {
           'profession', 'hasFlat', 'city', 'area', 'budget',
           'photos', 'flatPhotos', 'skills', 'hobbies', 'interests',
           'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
-          'smoking', 'pets', 'bio', 'isActive', 'createdAt', 'updatedAt'
+          'smoking', 'pets', 'personality', 'costBreakdown', 'identityVerification',
+          'listingDurationDays', 'expiresAt',
+          'bio', 'isActive', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.uid)
         && data.uid == request.auth.uid
@@ -90,6 +130,11 @@ service cloud.firestore {
         && isValidString(data.budget, 2, 40)
         && isValidPhotoList(data.photos)
         && (!('flatPhotos' in data) || isValidFlatPhotoList(data.flatPhotos))
+        && (!('personality' in data) || isValidPersonality(data.personality))
+        && (!('costBreakdown' in data) || isValidCostBreakdown(data.costBreakdown))
+        && (!('identityVerification' in data) || isValidIdentityVerification(data.identityVerification))
+        && (!('listingDurationDays' in data) || data.listingDurationDays in [7, 14, 30])
+        && (!('expiresAt' in data) || isValidString(data.expiresAt, 10, 40))
         && isValidStringList(data.skills, 1, 10, 60)
         && isValidStringList(data.hobbies, 0, 10, 60)
         && isValidStringList(data.interests, 0, 10, 60)
@@ -107,11 +152,15 @@ service cloud.firestore {
 
     function isValidPrivateUserInfo(data) {
       return data.keys().hasAll(['uid', 'email', 'phone', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['uid', 'email', 'phone', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'uid', 'email', 'phone', 'emergencyContact', 'blockedUids', 'createdAt', 'updatedAt'
+        ])
         && isValidId(data.uid)
         && data.uid == request.auth.uid
         && isValidString(data.email, 3, 120)
         && isValidString(data.phone, 6, 25)
+        && (!('emergencyContact' in data) || isValidString(data.emergencyContact, 0, 40))
+        && (!('blockedUids' in data) || isValidStringList(data.blockedUids, 0, 50, 128))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -162,6 +211,81 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidRoomieGroup(data) {
+      return data.keys().hasAll([
+          'groupId', 'sourceMatchId', 'createdBy', 'partnerUid',
+          'memberUids', 'memberNames', 'memberPhotos', 'gender',
+          'city', 'area', 'hasFlat', 'budgetPerPerson', 'bhkType',
+          'targetSize', 'openSpots', 'bio', 'vibeSummary', 'flatPhotos',
+          'status', 'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'groupId', 'sourceMatchId', 'createdBy', 'partnerUid',
+          'memberUids', 'memberNames', 'memberPhotos', 'gender',
+          'city', 'area', 'hasFlat', 'budgetPerPerson', 'bhkType',
+          'targetSize', 'openSpots', 'bio', 'vibeSummary', 'flatPhotos',
+          'costBreakdown', 'status', 'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.groupId)
+        && isValidId(data.sourceMatchId)
+        && isValidId(data.createdBy)
+        && isValidId(data.partnerUid)
+        && data.createdBy != data.partnerUid
+        && isValidStringList(data.memberUids, 2, 3, 128)
+        && isValidStringList(data.memberNames, 2, 3, 80)
+        && isValidPhotoList(data.memberPhotos)
+        && isValidFlatPhotoList(data.flatPhotos)
+        && data.gender in ['male', 'female', 'other', 'mixed']
+        && isValidString(data.city, 2, 60)
+        && isValidString(data.area, 2, 100)
+        && data.hasFlat in ['has_flat', 'needs_flat']
+        && isValidString(data.budgetPerPerson, 2, 40)
+        && isValidString(data.bhkType, 2, 80)
+        && data.targetSize is number && data.targetSize >= 3 && data.targetSize <= 4
+        && data.openSpots is number && data.openSpots >= 0 && data.openSpots <= 2
+        && isValidString(data.bio, 1, 500)
+        && isValidString(data.vibeSummary, 2, 120)
+        && (!('costBreakdown' in data) || isValidCostBreakdown(data.costBreakdown))
+        && data.status in ['seeking', 'full', 'archived']
+        && isValidString(data.expiresAt, 10, 40)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupInterest(data) {
+      return data.keys().hasAll(['uid', 'groupId', 'requesterName', 'groupMemberUids', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'groupId', 'requesterName', 'groupMemberUids', 'createdAt'])
+        && isValidId(data.uid)
+        && isValidId(data.groupId)
+        && isValidString(data.requesterName, 2, 80)
+        && isValidStringList(data.groupMemberUids, 2, 3, 128)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidGroupMessage(data) {
+      return data.keys().hasAll(['senderUid', 'senderName', 'visibleToUids', 'text', 'createdAt'])
+        && data.keys().hasOnly(['senderUid', 'senderName', 'visibleToUids', 'text', 'createdAt'])
+        && isValidId(data.senderUid)
+        && isValidString(data.senderName, 1, 80)
+        && isValidStringList(data.visibleToUids, 2, 6, 128)
+        && data.senderUid == request.auth.uid
+        && data.senderUid in data.visibleToUids
+        && isValidString(data.text, 1, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSafetyReport(data) {
+      return data.keys().hasAll(['reporterUid', 'reportedUid', 'reason', 'details', 'createdAt'])
+        && data.keys().hasOnly(['reporterUid', 'reportedUid', 'reason', 'details', 'createdAt'])
+        && isValidId(data.reporterUid)
+        && isValidId(data.reportedUid)
+        && data.reporterUid == request.auth.uid
+        && data.reportedUid != request.auth.uid
+        && isValidString(data.reason, 2, 100)
+        && isValidString(data.details, 0, 500)
+        && data.createdAt is timestamp;
+    }
+
     // ==================== 1. PUBLIC DISCOVERY PROFILES ====================
     match /profiles/{userId} {
       allow get: if isVerifiedUser()
@@ -191,13 +315,14 @@ service cloud.firestore {
           'profession', 'hasFlat', 'city', 'area', 'budget',
           'photos', 'flatPhotos', 'skills', 'hobbies', 'interests',
           'sleepSchedule', 'kitchenDiet', 'workRoutine', 'cleanliness',
-          'smoking', 'pets', 'bio', 'isActive', 'updatedAt'
+          'smoking', 'pets', 'personality', 'costBreakdown', 'identityVerification',
+          'listingDurationDays', 'expiresAt', 'bio', 'isActive', 'updatedAt'
         ]);
 
       allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
     }
 
-    // ==================== 2. PRIVATE PII CONTACTS ====================
+    // ==================== 2. PRIVATE PII CONTACTS & SAFETY ====================
     match /users_private/{userId} {
       allow get: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
       allow list: if isVerifiedUser() && resource.data.uid == request.auth.uid;
@@ -217,7 +342,9 @@ service cloud.firestore {
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'phone', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'phone', 'emergencyContact', 'blockedUids', 'updatedAt'
+        ]);
 
       allow delete: if isVerifiedUser() && isValidId(userId) && isOwner(userId);
     }
@@ -319,6 +446,143 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if false;
       }
+    }
+
+    // ==================== 5. GROUP MATCHING (CONNECTED DUOS SEEKING +1) ====================
+    match /groups/{groupId} {
+      allow get: if isVerifiedUser()
+        && isValidId(groupId)
+        && (
+          resource == null ||
+          existing().status == 'seeking' ||
+          request.auth.uid in existing().memberUids
+        );
+
+      allow list: if isVerifiedUser()
+        && (resource.data.status == 'seeking' || request.auth.uid in resource.data.memberUids);
+
+      allow create: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidRoomieGroup(incoming())
+        && incoming().groupId == groupId
+        && incoming().createdBy == request.auth.uid
+        && request.auth.uid in incoming().memberUids
+        && incoming().partnerUid in incoming().memberUids
+        && incoming().status == 'seeking'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/matches/$(incoming().sourceMatchId))
+        && (
+          get(/databases/$(database)/documents/matches/$(incoming().sourceMatchId)).data.userA == request.auth.uid ||
+          get(/databases/$(database)/documents/matches/$(incoming().sourceMatchId)).data.userB == request.auth.uid
+        );
+
+      allow update: if isVerifiedUser()
+        && isValidId(groupId)
+        && isValidRoomieGroup(incoming())
+        && request.auth.uid in existing().memberUids
+        && incoming().groupId == existing().groupId
+        && incoming().sourceMatchId == existing().sourceMatchId
+        && incoming().createdBy == existing().createdBy
+        && incoming().partnerUid == existing().partnerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'openSpots', 'city', 'area', 'hasFlat',
+          'budgetPerPerson', 'bhkType', 'bio', 'vibeSummary',
+          'flatPhotos', 'costBreakdown', 'expiresAt', 'updatedAt'
+        ]);
+
+      allow delete: if isVerifiedUser()
+        && isValidId(groupId)
+        && existing().createdBy == request.auth.uid;
+
+      // Group Interest Unlock Subcollection (for 3rd users clicking Interested on a Duo)
+      match /interests/{requesterUid} {
+        allow get: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(requesterUid)
+          && (
+            request.auth.uid == requesterUid ||
+            (
+              exists(/databases/$(database)/documents/groups/$(groupId)) &&
+              request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids
+            )
+          );
+
+        allow list: if isVerifiedUser()
+          && (
+            resource.data.uid == request.auth.uid ||
+            request.auth.uid in resource.data.groupMemberUids
+          );
+
+        allow create: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(requesterUid)
+          && requesterUid == request.auth.uid
+          && isValidGroupInterest(incoming())
+          && incoming().uid == requesterUid
+          && incoming().groupId == groupId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && get(/databases/$(database)/documents/groups/$(groupId)).data.status == 'seeking';
+
+        allow update: if false;
+        allow delete: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(requesterUid)
+          && requesterUid == request.auth.uid;
+      }
+
+      // Group Chat Messages (Master-gated to Duo Members + Interested 3rd Users)
+      match /messages/{messageId} {
+        allow get: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(messageId)
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && (
+            request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids ||
+            exists(/databases/$(database)/documents/groups/$(groupId)/interests/$(request.auth.uid))
+          );
+
+        allow list: if isVerifiedUser()
+          && (
+            resource.data.senderUid == request.auth.uid ||
+            request.auth.uid in resource.data.visibleToUids
+          );
+
+        allow create: if isVerifiedUser()
+          && isValidId(groupId)
+          && isValidId(messageId)
+          && isValidGroupMessage(incoming())
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/groups/$(groupId))
+          && (
+            request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberUids ||
+            exists(/databases/$(database)/documents/groups/$(groupId)/interests/$(request.auth.uid))
+          );
+
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
+    // ==================== 6. SAFETY REPORTS ====================
+    match /reports/{reportId} {
+      allow get: if isVerifiedUser()
+        && isValidId(reportId)
+        && resource != null
+        && existing().reporterUid == request.auth.uid;
+
+      allow list: if isVerifiedUser()
+        && resource.data.reporterUid == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(reportId)
+        && isValidSafetyReport(incoming())
+        && incoming().createdAt == request.time;
+
+      allow update, delete: if false;
     }
   }
 }

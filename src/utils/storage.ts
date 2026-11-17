@@ -34,6 +34,23 @@ export function safeRemoveStorage(key: string): void {
   }
 }
 
+export function inferImageMimeType(file: File): string {
+  if (file.type && file.type.trim()) {
+    return file.type.trim().toLowerCase();
+  }
+  const lowerName = file.name.toLowerCase();
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.jfif')) {
+    return 'image/jpeg';
+  }
+  if (lowerName.endsWith('.png')) return 'image/png';
+  if (lowerName.endsWith('.webp')) return 'image/webp';
+  if (lowerName.endsWith('.heic')) return 'image/heic';
+  if (lowerName.endsWith('.heif')) return 'image/heif';
+  if (lowerName.endsWith('.svg')) return 'image/svg+xml';
+  if (lowerName.endsWith('.gif')) return 'image/gif';
+  return '';
+}
+
 /**
  * Compresses an uploaded image file into a lightweight JPEG data URL
  * so photos render crisply while fitting safely within Firestore document & rule limits (<350KB).
@@ -50,7 +67,10 @@ export function compressImageFile(file: File, maxDimension = 520, quality = 0.72
       }
 
       const img = new Image();
-      img.onerror = () => reject(new Error('Selected file is not a valid image.'));
+      img.onerror = () =>
+        reject(
+          new Error('Your browser could not open this image format. Please upload a JPG, PNG, or WEBP photo.')
+        );
       img.onload = () => {
         try {
           const renderScaled = (dim: number, q: number): string => {
@@ -106,7 +126,7 @@ export function compressImageFile(file: File, maxDimension = 520, quality = 0.72
 export function prepareFlatPhotoForAiCheck(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed to read flat image file.'));
+    reader.onerror = () => reject(new Error('Failed to read image file.'));
     reader.onload = (event) => {
       const result = event.target?.result;
       if (typeof result !== 'string') {
@@ -115,11 +135,20 @@ export function prepareFlatPhotoForAiCheck(file: File): Promise<{ base64: string
       }
 
       const img = new Image();
-      img.onerror = () => reject(new Error('Selected file is not a valid image.'));
+      img.onerror = () =>
+        reject(
+          new Error(
+            'Your browser could not decode this image format (e.g., HEIC/RAW). Please upload a JPG, PNG, or WEBP photo.'
+          )
+        );
       img.onload = () => {
         try {
           const maxDim = 1024;
           let { width, height } = img;
+          if (!width || !height) {
+            reject(new Error('Image appears to be empty or corrupted.'));
+            return;
+          }
           if (width > maxDim || height > maxDim) {
             if (width >= height) {
               height = Math.round((height * maxDim) / width);
@@ -140,6 +169,10 @@ export function prepareFlatPhotoForAiCheck(file: File): Promise<{ base64: string
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
           const base64 = dataUrl.split(',')[1] || '';
+          if (!base64 || base64.length < 32) {
+            reject(new Error('Could not extract image pixels for AI inspection.'));
+            return;
+          }
           resolve({ base64, mimeType: 'image/jpeg' });
         } catch {
           reject(new Error('Could not prepare image for AI verification.'));
@@ -166,7 +199,10 @@ export function compressFlatImageFile(file: File): Promise<string> {
       }
 
       const img = new Image();
-      img.onerror = () => reject(new Error('Selected file is not a valid image.'));
+      img.onerror = () =>
+        reject(
+          new Error('Your browser could not decode this image format. Please upload a JPG, PNG, or WEBP photo.')
+        );
       img.onload = () => {
         try {
           const renderScaled = (dim: number, q: number): string => {

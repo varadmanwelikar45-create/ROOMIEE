@@ -1,12 +1,15 @@
 import React from 'react';
-import { Flame, Star, MessageSquare, User, LogOut, Home, Search, Mail } from 'lucide-react';
+import { Flame, Star, MessageSquare, User, LogOut, Home, Search, Mail, Users, ShieldCheck } from 'lucide-react';
 import { UserProfile } from '../types';
+
+export type AppTab = 'discover' | 'top_picks' | 'groups' | 'matches' | 'gmail' | 'profile';
 
 interface AppHeaderProps {
   currentUser: UserProfile;
-  currentTab: 'discover' | 'top_picks' | 'matches' | 'gmail' | 'profile';
-  onTabChange: (tab: 'discover' | 'top_picks' | 'matches' | 'gmail' | 'profile') => void;
+  currentTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   matchesCount: number;
+  groupsCount?: number;
   onSignOut: () => void;
 }
 
@@ -15,6 +18,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   currentTab,
   onTabChange,
   matchesCount,
+  groupsCount = 0,
   onSignOut,
 }) => {
   return (
@@ -32,6 +36,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <span className="text-[10px] text-[#FFD43B] bg-[#303030] px-2 py-0.5 rounded-full font-bold border border-[#444444]">
               {currentUser.gender === 'male' ? '👦 Boy' : currentUser.gender === 'female' ? '👧 Girl' : '👤 Roomie'}
             </span>
+            {currentUser.identityVerification?.identityVerified && (
+              <span
+                className="text-[10px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-full border border-emerald-500/40 inline-flex items-center gap-0.5 font-bold"
+                title="AI + ID Verified Account"
+              >
+                <ShieldCheck className="w-3 h-3" />
+                <span className="hidden sm:inline">ID Verified</span>
+              </span>
+            )}
           </div>
 
           {/* Current Flat Status Badge */}
@@ -80,31 +93,50 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {/* 2. STAR (Top Roomie Picks) */}
           <button
             onClick={() => onTabChange('top_picks')}
-            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
               currentTab === 'top_picks'
                 ? 'text-sky-400 bg-[#303030] shadow-md scale-105'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
             title="Top Roomie Picks"
           >
-            <Star className="w-6 h-6 stroke-[2.2] fill-current" />
+            <Star className="w-5 h-5 stroke-[2.2] fill-current" />
             <span className="text-[10px] font-bold">Top Picks</span>
           </button>
 
-          {/* 3. CHAT (Matches & Conversations) */}
+          {/* 3. GROUPS (Connected Duos Seeking +1) */}
+          <button
+            onClick={() => onTabChange('groups')}
+            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
+              currentTab === 'groups'
+                ? 'text-emerald-400 bg-[#303030] shadow-md scale-105'
+                : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
+            }`}
+            title="Duo Groups Seeking +1 Flatmate"
+          >
+            <Users className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">Groups</span>
+            {groupsCount > 0 && (
+              <span className="absolute top-0.5 right-1 text-[9px] font-bold bg-emerald-400 text-[#1c1c1c] px-1.5 py-0.5 rounded-full shadow leading-none">
+                {groupsCount}
+              </span>
+            )}
+          </button>
+
+          {/* 4. CHAT (Matches & Conversations) */}
           <button
             onClick={() => onTabChange('matches')}
-            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
+            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
               currentTab === 'matches'
                 ? 'text-emerald-400 bg-[#303030] shadow-md scale-105'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
             title="Matches & Messages"
           >
-            <MessageSquare className="w-6 h-6 stroke-[2.2] fill-current" />
+            <MessageSquare className="w-5 h-5 stroke-[2.2] fill-current" />
             <span className="text-[10px] font-bold">Matches</span>
             {matchesCount > 0 && (
-              <span className="absolute top-1 right-2 text-[10px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.5 rounded-full shadow leading-none">
+              <span className="absolute top-0.5 right-1 text-[9px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.5 rounded-full shadow leading-none">
                 {matchesCount}
               </span>
             )}

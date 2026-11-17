@@ -6,12 +6,31 @@ import {
   query,
   where,
   writeBatch,
+  setDoc,
+  updateDoc,
   serverTimestamp,
   Timestamp,
   Unsubscribe,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { FlatmateCandidate, Gender, FlatStatus, UserProfile } from '../types';
+import {
+  CostBreakdown,
+  FlatmateCandidate,
+  FlatStatus,
+  Gender,
+  GroupMessage,
+  IdentityVerificationInfo,
+  PersonalityProfile,
+  RoomieGroup,
+  UserProfile,
+} from '../types';
+import {
+  DEFAULT_COST_BREAKDOWN,
+  DEFAULT_PERSONALITY,
+  computeCostTotals,
+  formatINR,
+  isListingExpired,
+} from '../utils/compatibility';
 
 export interface FirestoreMatchRecord {
   matchId: string;
@@ -40,13 +59,65 @@ function clampStr(val: string, fallback: string, minLen: number, maxLen: number)
   return cleaned.slice(0, maxLen);
 }
 
-function clampList(arr: string[], fallback: string[], minItems: number, maxItems: number, maxItemLen: number): string[] {
+function clampList(
+  arr: string[],
+  fallback: string[],
+  minItems: number,
+  maxItems: number,
+  maxItemLen: number
+): string[] {
   const cleaned = (arr || [])
     .map((s) => (typeof s === 'string' ? s.trim().slice(0, maxItemLen) : ''))
     .filter((s) => s.length > 0)
     .slice(0, maxItems);
   if (cleaned.length < minItems) return fallback.slice(0, maxItems);
   return cleaned;
+}
+
+function clampNum(val: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof val === 'number' && Number.isFinite(val) ? Math.round(val) : fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function sanitizePersonality(p?: Partial<PersonalityProfile>): PersonalityProfile {
+  return {
+    vibe: clampStr(p?.vibe || '', DEFAULT_PERSONALITY.vibe, 2, 80),
+    guestPolicy: clampStr(p?.guestPolicy || '', DEFAULT_PERSONALITY.guestPolicy, 2, 80),
+    noiseTolerance: clampStr(p?.noiseTolerance || '', DEFAULT_PERSONALITY.noiseTolerance, 2, 80),
+    conflictStyle: clampStr(p?.conflictStyle || '', DEFAULT_PERSONALITY.conflictStyle, 2, 80),
+    choreStyle: clampStr(p?.choreStyle || '', DEFAULT_PERSONALITY.choreStyle, 2, 80),
+  };
+}
+
+function sanitizeCostBreakdown(c?: Partial<CostBreakdown>, budgetFallback?: string): CostBreakdown {
+  const totals = computeCostTotals(c, budgetFallback);
+  return {
+    monthlyRent: clampNum(c?.monthlyRent ?? totals.monthlyRent, 18000, 0, 500000),
+    securityDeposit: clampNum(c?.securityDeposit ?? totals.securityDeposit, 40000, 0, 2000000),
+    maintenanceFee: clampNum(c?.maintenanceFee ?? totals.maintenanceFee, 1800, 0, 100000),
+    utilitiesEstimate: clampNum(c?.utilitiesEstimate ?? totals.utilitiesEstimate, 2800, 0, 100000),
+    brokerageFee: clampNum(c?.brokerageFee ?? totals.brokerageFee, 0, 0, 500000),
+    bhkType: clampStr(c?.bhkType || '', DEFAULT_COST_BREAKDOWN.bhkType, 2, 80),
+  };
+}
+
+function sanitizeIdentityVerification(v?: Partial<IdentityVerificationInfo>): IdentityVerificationInfo {
+  const method =
+    v?.verificationMethod === 'selfie_liveness' ||
+    v?.verificationMethod === 'gov_id_ai_check' ||
+    v?.verificationMethod === 'workplace_id_ai_check'
+      ? v.verificationMethod
+      : 'google_only';
+  return {
+    identityVerified: Boolean(v?.identityVerified) && method !== 'google_only',
+    verificationMethod: method,
+    verifiedAt: v?.verifiedAt ? clampStr(v.verifiedAt, '', 0, 60) : '',
+  };
+}
+
+export function computeExpiryIso(days: 7 | 14 | 30 = 14): string {
+  const safeDays = days === 7 || days === 30 ? days : 14;
+  return new Date(Date.now() + safeDays * 24 * 60 * 60 * 1000).toISOString();
 }
 
 export function getMatchId(uid1: string, uid2: string): { matchId: string; userA: string; userB: string } {
@@ -59,7 +130,7 @@ export function getMatchId(uid1: string, uid2: string): { matchId: string; userA
 }
 
 /**
- * Loads the signed-in user's public profile + private PII info from Firestore.
+ * Loads the signed-in user's public profile + private PII/safety info from Firestore.
  */
 export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | null> {
   const profilePath = `profiles/${uid}`;
@@ -73,16 +144,25 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
     const pData = profileSnap.data();
     let email = '';
     let phone = '';
+    let emergencyContact = '';
+    let blockedUids: string[] = [];
     try {
       const privSnap = await getDoc(doc(db, 'users_private', uid));
       if (privSnap.exists()) {
         const privData = privSnap.data();
         email = typeof privData.email === 'string' ? privData.email : '';
         phone = typeof privData.phone === 'string' ? privData.phone : '';
+        emergencyContact = typeof privData.emergencyContact === 'string' ? privData.emergencyContact : '';
+        blockedUids = Array.isArray(privData.blockedUids) ? privData.blockedUids.map(String) : [];
       }
     } catch (privErr) {
       handleFirestoreError(privErr, OperationType.GET, privatePath);
     }
+
+    const durationDays: 7 | 14 | 30 =
+      pData.listingDurationDays === 7 || pData.listingDurationDays === 30
+        ? pData.listingDurationDays
+        : 14;
 
     return {
       id: uid,
@@ -108,6 +188,16 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
         smoking: String(pData.smoking || 'Non-smoker'),
         pets: String(pData.pets || 'Friendly with pets'),
       },
+      personality: sanitizePersonality(pData.personality),
+      costBreakdown: sanitizeCostBreakdown(pData.costBreakdown, String(pData.budget || '')),
+      identityVerification: sanitizeIdentityVerification(pData.identityVerification),
+      emergencyContact,
+      blockedUids,
+      listingDurationDays: durationDays,
+      expiresAt:
+        typeof pData.expiresAt === 'string' && pData.expiresAt.length >= 10
+          ? pData.expiresAt
+          : computeExpiryIso(durationDays),
       bio: String(pData.bio || ''),
       photos: Array.isArray(pData.photos) ? pData.photos.map(String) : [],
       flatPhotos: Array.isArray(pData.flatPhotos) ? pData.flatPhotos.map(String) : [],
@@ -123,7 +213,7 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
 }
 
 /**
- * Atomically saves or updates the user's public discovery profile and private PII contact doc.
+ * Atomically saves or updates the user's public discovery profile and private PII/safety doc.
  */
 export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
   const uid = user.id;
@@ -145,6 +235,18 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
           .slice(0, 3)
       : [];
 
+  const durationDays: 7 | 14 | 30 =
+    user.listingDurationDays === 7 || user.listingDurationDays === 30 ? user.listingDurationDays : 14;
+  const expiresAt =
+    typeof user.expiresAt === 'string' && user.expiresAt.length >= 10
+      ? user.expiresAt.slice(0, 40)
+      : computeExpiryIso(durationDays);
+
+  const costBreakdown = sanitizeCostBreakdown(user.costBreakdown, user.budget);
+  const budgetLabel = user.budget?.trim()
+    ? clampStr(user.budget, `${formatINR(costBreakdown.monthlyRent)} / mo`, 2, 40)
+    : `${formatINR(costBreakdown.monthlyRent)} / mo`;
+
   const publicPayload = {
     uid,
     name: clampStr(user.name, 'ROOMIE User', 2, 80),
@@ -155,7 +257,7 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     hasFlat: user.hasFlat || 'needs_flat',
     city: clampStr(user.flatLocation?.city, 'Bengaluru', 2, 60),
     area: clampStr(user.flatLocation?.area, 'Koramangala', 2, 100),
-    budget: clampStr(user.budget, '₹18,000 / mo', 2, 40),
+    budget: budgetLabel,
     photos: sanitizedPhotos,
     flatPhotos: sanitizedFlatPhotos,
     skills: clampList(user.skills, ['Software Engineering'], 1, 10, 60),
@@ -167,6 +269,11 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     cleanliness: clampStr(user.lifestyle?.cleanliness, 'Daily cleanup', 2, 100),
     smoking: clampStr(user.lifestyle?.smoking, 'Non-smoker', 2, 50),
     pets: clampStr(user.lifestyle?.pets, 'Friendly with pets', 2, 50),
+    personality: sanitizePersonality(user.personality),
+    costBreakdown,
+    identityVerification: sanitizeIdentityVerification(user.identityVerification),
+    listingDurationDays: durationDays,
+    expiresAt,
     bio: clampStr(user.bio, 'Looking for a compatible flatmate on ROOMIE.', 1, 500),
     isActive: true,
   };
@@ -175,6 +282,8 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     uid,
     email: clampStr(user.email, 'user@roomie.in', 3, 120),
     phone: clampStr(user.phone, '+91 90000 00000', 6, 25),
+    emergencyContact: (user.emergencyContact || '').trim().slice(0, 40),
+    blockedUids: clampList(user.blockedUids || [], [], 0, 50, 128),
   };
 
   let existingProfile;
@@ -216,6 +325,8 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     batch.update(privateRef, {
       email: privatePayload.email,
       phone: privatePayload.phone,
+      emergencyContact: privatePayload.emergencyContact,
+      blockedUids: privatePayload.blockedUids,
       updatedAt: serverTimestamp(),
     });
   }
@@ -228,8 +339,48 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
 }
 
 /**
- * Real-time subscription to all active flatmate profiles in Firestore so every
- * registered user can see all other registered users across devices.
+ * Blocks a user privately so they are filtered out of discovery, picks, and matches.
+ */
+export async function blockUserInDb(currentUid: string, targetUid: string, currentBlocked: string[]): Promise<string[]> {
+  const nextBlocked = Array.from(new Set([...currentBlocked, targetUid])).slice(0, 50);
+  const privateRef = doc(db, 'users_private', currentUid);
+  try {
+    await updateDoc(privateRef, {
+      blockedUids: nextBlocked,
+      updatedAt: serverTimestamp(),
+    });
+    return nextBlocked;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `users_private/${currentUid}`);
+  }
+}
+
+/**
+ * Files an immutable safety report on a suspicious or abusive profile.
+ */
+export async function submitSafetyReport(
+  reporterUid: string,
+  reportedUid: string,
+  reason: string,
+  details: string
+): Promise<void> {
+  const reportId = `rep_${reporterUid.slice(0, 12)}_${reportedUid.slice(0, 12)}_${Date.now()}`;
+  const reportRef = doc(db, 'reports', reportId);
+  try {
+    await setDoc(reportRef, {
+      reporterUid,
+      reportedUid,
+      reason: clampStr(reason, 'Safety concern', 2, 100),
+      details: (details || '').trim().slice(0, 500),
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `reports/${reportId}`);
+  }
+}
+
+/**
+ * Real-time subscription to all active flatmate profiles in Firestore.
  */
 export function subscribeToCommunityProfiles(
   onUpdate: (candidates: FlatmateCandidate[]) => void,
@@ -243,6 +394,12 @@ export function subscribeToCommunityProfiles(
     (snapshot) => {
       const list: FlatmateCandidate[] = snapshot.docs.map((docSnap) => {
         const d = docSnap.data();
+        const costBreakdown = sanitizeCostBreakdown(d.costBreakdown, String(d.budget || ''));
+        const personality = sanitizePersonality(d.personality);
+        const identityVerification = sanitizeIdentityVerification(d.identityVerification);
+        const durationDays: 7 | 14 | 30 =
+          d.listingDurationDays === 7 || d.listingDurationDays === 30 ? d.listingDurationDays : 14;
+
         return {
           id: docSnap.id,
           name: String(d.name || 'Flatmate'),
@@ -267,12 +424,16 @@ export function subscribeToCommunityProfiles(
             smoking: String(d.smoking || 'Non-smoker'),
             pets: String(d.pets || 'Friendly with pets'),
           },
-          compatibilityScore: 94,
+          personality,
+          costBreakdown,
+          identityVerification,
+          listingDurationDays: durationDays,
+          expiresAt: typeof d.expiresAt === 'string' ? d.expiresAt : undefined,
           flatDetails:
             d.hasFlat === 'has_flat'
               ? {
-                  bhk: '2/3 BHK Apartment',
-                  deposit: '₹50,000',
+                  bhk: costBreakdown.bhkType || '2/3 BHK Apartment',
+                  deposit: formatINR(costBreakdown.securityDeposit),
                   amenities: ['Power Backup', 'Wi-Fi 300 Mbps', 'Washing Machine', 'Daily Housekeeper'],
                 }
               : undefined,
@@ -291,8 +452,7 @@ export function subscribeToCommunityProfiles(
 }
 
 /**
- * Records a user's swipe action and creates a real match document in Firestore
- * when liking or super-connecting so both users appear in each other's Matches tab.
+ * Records a user's swipe action and creates a real match document in Firestore.
  */
 export async function recordSwipeAndConnect(
   fromUid: string,
@@ -482,5 +642,350 @@ export async function sendMatchMessage(
     await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `matches/${matchId}/messages/${messageId}`);
+  }
+}
+
+// ==================== GROUP MATCHING (CONNECTED DUO SEEKING +1) ====================
+
+/**
+ * Teams up two connected flatmates into a visible Duo Group seeking 1 more compatible flatmate.
+ */
+export async function createDuoGroup(
+  currentUser: UserProfile,
+  partner: FlatmateCandidate,
+  details: {
+    area?: string;
+    city?: string;
+    bhkType?: string;
+    budgetPerPerson?: string;
+    bio?: string;
+  }
+): Promise<RoomieGroup> {
+  const { matchId } = getMatchId(currentUser.id, partner.id);
+  const groupId = `grp_${matchId}`;
+  const groupRef = doc(db, 'groups', groupId);
+
+  const memberPhotos = [currentUser.photos?.[0], partner.photos?.[0]]
+    .filter((p): p is string => typeof p === 'string' && p.length >= 10 && p.length <= 345000)
+    .slice(0, 2);
+
+  if (memberPhotos.length === 0) {
+    throw new Error('At least one profile photo is required to form a group.');
+  }
+
+  const hasFlat: FlatStatus =
+    currentUser.hasFlat === 'has_flat' || partner.hasFlat === 'has_flat' ? 'has_flat' : 'needs_flat';
+
+  const combinedFlatPhotos = [
+    ...(currentUser.flatPhotos || []),
+    ...(partner.flatPhotos || []),
+  ]
+    .filter((p) => typeof p === 'string' && p.length >= 10 && p.length <= 178000)
+    .slice(0, 3);
+
+  const city = clampStr(details.city || currentUser.flatLocation.city, 'Bengaluru', 2, 60);
+  const area = clampStr(details.area || currentUser.flatLocation.area, 'Koramangala', 2, 100);
+  const bhkType = clampStr(details.bhkType || '3 BHK · Seeking 3rd Flatmate', '3 BHK · Seeking 3rd Flatmate', 2, 80);
+  const budgetPerPerson = clampStr(details.budgetPerPerson || currentUser.budget, '₹16,000 / mo', 2, 40);
+  const costBreakdown = sanitizeCostBreakdown(
+    { ...currentUser.costBreakdown, bhkType },
+    budgetPerPerson
+  );
+  const expiresAt = computeExpiryIso(14);
+
+  const groupGender: RoomieGroup['gender'] =
+    currentUser.gender === partner.gender ? currentUser.gender : 'mixed';
+
+  const vibeSummary = clampStr(
+    `${currentUser.personality?.vibe.split('·')[0].trim() || 'Ambivert'} Duo · ${currentUser.lifestyle.kitchenDiet}`,
+    'Friendly Duo · Clean & Respectful',
+    2,
+    120
+  );
+
+  const bio = clampStr(
+    details.bio ||
+      `${currentUser.name} and ${partner.name} are already connected in ${area}, ${city} and need 1 more flatmate for a ${bhkType}!`,
+    `${currentUser.name} & ${partner.name} teamed up and need 1 more flatmate.`,
+    1,
+    500
+  );
+
+  const payload = {
+    groupId,
+    sourceMatchId: matchId,
+    createdBy: currentUser.id,
+    partnerUid: partner.id,
+    memberUids: [currentUser.id, partner.id],
+    memberNames: [
+      clampStr(currentUser.name, 'Roomie 1', 1, 80),
+      clampStr(partner.name, 'Roomie 2', 1, 80),
+    ],
+    memberPhotos,
+    gender: groupGender,
+    city,
+    area,
+    hasFlat,
+    budgetPerPerson,
+    bhkType,
+    targetSize: 3,
+    openSpots: 1,
+    bio,
+    vibeSummary,
+    flatPhotos: combinedFlatPhotos,
+    costBreakdown,
+    status: 'seeking' as const,
+    expiresAt,
+  };
+
+  try {
+    const existingSnap = await getDoc(groupRef);
+    if (!existingSnap.exists()) {
+      await setDoc(groupRef, {
+        ...payload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return {
+        ...payload,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    const existingData = existingSnap.data();
+    await updateDoc(groupRef, {
+      status: 'seeking',
+      openSpots: 1,
+      city,
+      area,
+      hasFlat,
+      budgetPerPerson,
+      bhkType,
+      bio,
+      vibeSummary,
+      flatPhotos: combinedFlatPhotos,
+      costBreakdown,
+      expiresAt,
+      updatedAt: serverTimestamp(),
+    });
+    return {
+      ...payload,
+      createdBy: String(existingData.createdBy || currentUser.id),
+      partnerUid: String(existingData.partnerUid || partner.id),
+      memberUids: Array.isArray(existingData.memberUids)
+        ? existingData.memberUids.map(String)
+        : payload.memberUids,
+      memberNames: Array.isArray(existingData.memberNames)
+        ? existingData.memberNames.map(String)
+        : payload.memberNames,
+      memberPhotos: Array.isArray(existingData.memberPhotos)
+        ? existingData.memberPhotos.map(String)
+        : payload.memberPhotos,
+      createdAt:
+        existingData.createdAt instanceof Timestamp
+          ? existingData.createdAt.toDate().toISOString()
+          : new Date().toISOString(),
+    };
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `groups/${groupId}`);
+  }
+}
+
+/**
+ * Real-time subscription to active Duo Groups seeking a 3rd flatmate (plus groups user belongs to).
+ */
+export function subscribeToSeekingGroups(
+  onUpdate: (groups: RoomieGroup[]) => void
+): Unsubscribe {
+  const q = query(collection(db, 'groups'), where('status', '==', 'seeking'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: RoomieGroup[] = snap.docs
+        .map((d) => {
+          const g = d.data();
+          return {
+            groupId: d.id,
+            sourceMatchId: String(g.sourceMatchId || ''),
+            createdBy: String(g.createdBy || ''),
+            partnerUid: String(g.partnerUid || ''),
+            memberUids: Array.isArray(g.memberUids) ? g.memberUids.map(String) : [],
+            memberNames: Array.isArray(g.memberNames) ? g.memberNames.map(String) : [],
+            memberPhotos: Array.isArray(g.memberPhotos) ? g.memberPhotos.map(String) : [],
+            gender: (g.gender as RoomieGroup['gender']) || 'mixed',
+            city: String(g.city || 'Bengaluru'),
+            area: String(g.area || ''),
+            hasFlat: (g.hasFlat as FlatStatus) || 'needs_flat',
+            budgetPerPerson: String(g.budgetPerPerson || '₹16,000 / mo'),
+            bhkType: String(g.bhkType || '3 BHK'),
+            targetSize: typeof g.targetSize === 'number' ? g.targetSize : 3,
+            openSpots: typeof g.openSpots === 'number' ? g.openSpots : 1,
+            bio: String(g.bio || ''),
+            vibeSummary: String(g.vibeSummary || ''),
+            flatPhotos: Array.isArray(g.flatPhotos) ? g.flatPhotos.map(String) : [],
+            costBreakdown: g.costBreakdown ? sanitizeCostBreakdown(g.costBreakdown, String(g.budgetPerPerson || '')) : undefined,
+            status: (g.status as RoomieGroup['status']) || 'seeking',
+            expiresAt: String(g.expiresAt || computeExpiryIso(14)),
+            createdAt:
+              g.createdAt instanceof Timestamp ? g.createdAt.toDate().toISOString() : undefined,
+          };
+        })
+        .filter((g) => !isListingExpired(g.expiresAt));
+      onUpdate(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'groups');
+    }
+  );
+}
+
+/**
+ * Records a 3rd user clicking "I'm Interested" on a Duo Group to unlock group chat.
+ */
+export async function recordGroupInterestAndUnlock(
+  group: RoomieGroup,
+  requester: UserProfile
+): Promise<void> {
+  const interestRef = doc(db, 'groups', group.groupId, 'interests', requester.id);
+  try {
+    const snap = await getDoc(interestRef);
+    if (!snap.exists()) {
+      await setDoc(interestRef, {
+        uid: requester.id,
+        groupId: group.groupId,
+        requesterName: clampStr(requester.name, 'Roomie', 2, 80),
+        groupMemberUids: group.memberUids.slice(0, 3),
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `groups/${group.groupId}/interests/${requester.id}`);
+  }
+}
+
+/**
+ * Checks whether the current user has already unlocked interest in a specific group.
+ */
+export async function checkUserGroupInterest(groupId: string, uid: string): Promise<boolean> {
+  try {
+    const snap = await getDoc(doc(db, 'groups', groupId, 'interests', uid));
+    return snap.exists();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Subscribes to interested requesters for a Duo Group.
+ */
+export function subscribeToGroupInterests(
+  groupId: string,
+  memberUid: string,
+  onUpdate: (interests: Array<{ uid: string; requesterName: string }>) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, 'groups', groupId, 'interests'),
+    where('groupMemberUids', 'array-contains', memberUid)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      onUpdate(
+        snap.docs.map((d) => ({
+          uid: String(d.data().uid || d.id),
+          requesterName: String(d.data().requesterName || 'Flatmate'),
+        }))
+      );
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, `groups/${groupId}/interests`);
+    }
+  );
+}
+
+/**
+ * Real-time subscription to messages inside a Duo Group chat.
+ */
+export function subscribeToGroupMessages(
+  groupId: string,
+  currentUid: string,
+  onUpdate: (messages: GroupMessage[]) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, 'groups', groupId, 'messages'),
+    where('visibleToUids', 'array-contains', currentUid)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: GroupMessage[] = snap.docs
+        .map((d) => ({
+          id: d.id,
+          senderUid: String(d.data().senderUid || ''),
+          senderName: String(d.data().senderName || 'Roomie'),
+          visibleToUids: Array.isArray(d.data().visibleToUids)
+            ? d.data().visibleToUids.map(String)
+            : [],
+          text: String(d.data().text || ''),
+          createdAt: d.data().createdAt as Timestamp | null | undefined,
+        }))
+        .sort((a, b) => {
+          const tA = a.createdAt?.toMillis?.() ?? Date.now();
+          const tB = b.createdAt?.toMillis?.() ?? Date.now();
+          return tA - tB;
+        });
+      onUpdate(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, `groups/${groupId}/messages`);
+    }
+  );
+}
+
+/**
+ * Sends a message inside a Group Chat visible to group members and the interested flatmate(s).
+ */
+export async function sendGroupMessage(
+  groupId: string,
+  sender: UserProfile,
+  visibleToUids: string[],
+  text: string
+): Promise<void> {
+  const trimmed = text.trim().slice(0, 1000);
+  if (!trimmed) return;
+  const participants = Array.from(new Set([...visibleToUids, sender.id])).slice(0, 6);
+  if (participants.length < 2) return;
+
+  const messageId = `gmsg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const msgRef = doc(db, 'groups', groupId, 'messages', messageId);
+
+  try {
+    await setDoc(msgRef, {
+      senderUid: sender.id,
+      senderName: clampStr(sender.name, 'Roomie', 1, 80),
+      visibleToUids: participants,
+      text: trimmed,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, `groups/${groupId}/messages/${messageId}`);
+  }
+}
+
+/**
+ * Updates a Duo Group status (e.g. 'full' once the 3rd flatmate is found, or renews expiry).
+ */
+export async function updateGroupStatus(
+  groupId: string,
+  status: 'seeking' | 'full' | 'archived'
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'groups', groupId), {
+      status,
+      openSpots: status === 'seeking' ? 1 : 0,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `groups/${groupId}`);
   }
 }

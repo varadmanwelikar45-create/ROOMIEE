@@ -117,6 +117,28 @@
           "maxLength": 50,
           "description": "Pet preference."
         },
+        "personality": {
+          "type": "object",
+          "description": "Structured personality dimensions for compatibility matching (vibe, guestPolicy, noiseTolerance, conflictStyle, choreStyle)."
+        },
+        "costBreakdown": {
+          "type": "object",
+          "description": "Structured monthly and upfront cost breakdown (rent, deposit, maintenance, utilities, brokerage, bhkType)."
+        },
+        "identityVerification": {
+          "type": "object",
+          "description": "Verified trust tier badge status (never stores raw ID documents)."
+        },
+        "listingDurationDays": {
+          "type": "number",
+          "description": "Chosen listing auto-expiry window in days (7, 14, or 30)."
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "ISO timestamp after which the listing automatically expires from discovery."
+        },
         "bio": {
           "type": "string",
           "minLength": 1,
@@ -167,7 +189,7 @@
     },
     "PrivateUserInfo": {
       "title": "PrivateUserInfo",
-      "description": "Owner-only PII document holding private contact details (email and phone).",
+      "description": "Owner-only PII document holding private contact details, trusted emergency contact, and blocked user IDs.",
       "type": "object",
       "properties": {
         "uid": {
@@ -188,6 +210,16 @@
           "minLength": 6,
           "maxLength": 25,
           "description": "Private phone number."
+        },
+        "emergencyContact": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40,
+          "description": "Trusted emergency contact phone for flat visits."
+        },
+        "blockedUids": {
+          "type": "array",
+          "description": "Up to 50 user UIDs blocked by this user."
         },
         "createdAt": {
           "type": "string",
@@ -316,6 +348,20 @@
           "pattern": "^[a-zA-Z0-9_\\-]+$",
           "description": "UID of the message sender."
         },
+        "userA": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Lexicographically smaller participant UID."
+        },
+        "userB": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Lexicographically larger participant UID."
+        },
         "text": {
           "type": "string",
           "minLength": 1,
@@ -328,17 +374,270 @@
           "description": "Server timestamp when message was sent."
         }
       },
-      "required": ["senderUid", "text", "createdAt"]
+      "required": ["senderUid", "userA", "userB", "text", "createdAt"]
+    },
+    "RoomieGroup": {
+      "title": "RoomieGroup",
+      "description": "A duo of 2 connected flatmates teaming up to find 1 more compatible flatmate.",
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 260,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Group document ID."
+        },
+        "sourceMatchId": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 260,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Backing active matchId connecting the two teammates."
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the member who published the group."
+        },
+        "partnerUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the connected partner in this duo."
+        },
+        "memberUids": {
+          "type": "array",
+          "description": "Bounded list of 2 to 3 member UIDs."
+        },
+        "memberNames": {
+          "type": "array",
+          "description": "Display names of group members."
+        },
+        "memberPhotos": {
+          "type": "array",
+          "description": "Profile photos of group members (compressed)."
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female", "other", "mixed"],
+          "description": "Group gender composition."
+        },
+        "city": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "City."
+        },
+        "area": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Target or flat area."
+        },
+        "hasFlat": {
+          "type": "string",
+          "enum": ["has_flat", "needs_flat"],
+          "description": "Whether the duo already has a flat."
+        },
+        "budgetPerPerson": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40,
+          "description": "Per-person monthly rent share."
+        },
+        "bhkType": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Flat configuration (e.g. 3 BHK)."
+        },
+        "targetSize": {
+          "type": "number",
+          "description": "Target group size (3)."
+        },
+        "openSpots": {
+          "type": "number",
+          "description": "Remaining open spots (typically 1)."
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Group intro and flatmate expectations."
+        },
+        "vibeSummary": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120,
+          "description": "Combined group vibe summary."
+        },
+        "flatPhotos": {
+          "type": "array",
+          "description": "Up to 3 verified flat photos for the group."
+        },
+        "costBreakdown": {
+          "type": "object",
+          "description": "Per-person cost breakdown for joining the group."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["seeking", "full", "archived"],
+          "description": "Whether group is actively looking for +1."
+        },
+        "expiresAt": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "Automatic group listing expiry ISO timestamp."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "groupId",
+        "sourceMatchId",
+        "createdBy",
+        "partnerUid",
+        "memberUids",
+        "memberNames",
+        "memberPhotos",
+        "gender",
+        "city",
+        "area",
+        "hasFlat",
+        "budgetPerPerson",
+        "bhkType",
+        "targetSize",
+        "openSpots",
+        "bio",
+        "vibeSummary",
+        "flatPhotos",
+        "status",
+        "expiresAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GroupInterest": {
+      "title": "GroupInterest",
+      "description": "Records a 3rd user clicking Interested in joining a RoomieGroup.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "groupId": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 260,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "requesterName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "groupMemberUids": {
+          "type": "array",
+          "description": "Bounded list of the group's 2-3 member UIDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "groupId", "requesterName", "groupMemberUids", "createdAt"]
+    },
+    "GroupMessage": {
+      "title": "GroupMessage",
+      "description": "Real-time message inside a group matching chat.",
+      "type": "object",
+      "properties": {
+        "senderUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "visibleToUids": {
+          "type": "array",
+          "description": "Bounded list of group participant UIDs allowed to view this message."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["senderUid", "senderName", "visibleToUids", "text", "createdAt"]
+    },
+    "SafetyReport": {
+      "title": "SafetyReport",
+      "description": "User-submitted safety or suspicious-profile report.",
+      "type": "object",
+      "properties": {
+        "reporterUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "reportedUid": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "details": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["reporterUid", "reportedUid", "reason", "details", "createdAt"]
     }
   },
   "firestore": {
     "/profiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicProfile" },
-      "description": "Public flatmate discovery profiles so verified users can see each other."
+      "description": "Public flatmate discovery profiles with personality, cost breakdown, trust status, and automatic expiry."
     },
     "/users_private/{userId}": {
       "schema": { "$ref": "#/entities/PrivateUserInfo" },
-      "description": "Owner-only private PII contact information."
+      "description": "Owner-only private PII, emergency contact, and blocked user list."
     },
     "/swipes/{swipeId}": {
       "schema": { "$ref": "#/entities/Swipe" },
@@ -351,6 +650,22 @@
     "/matches/{matchId}/messages/{messageId}": {
       "schema": { "$ref": "#/entities/ChatMessage" },
       "description": "Real-time messages exchanged between matched flatmates."
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/RoomieGroup" },
+      "description": "Duo flatmate groups formed from connected matches seeking a 3rd roommate."
+    },
+    "/groups/{groupId}/interests/{uid}": {
+      "schema": { "$ref": "#/entities/GroupInterest" },
+      "description": "Tracks users interested in joining a RoomieGroup."
+    },
+    "/groups/{groupId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/GroupMessage" },
+      "description": "Real-time group chat messages between duo members and interested flatmates."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/SafetyReport" },
+      "description": "Safety reports filed by verified users."
     }
   }
 }

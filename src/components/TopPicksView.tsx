@@ -1,6 +1,7 @@
 import React from 'react';
 import { FlatmateCandidate } from '../types';
 import { Star, Heart, MapPin, Briefcase, Home, Search, MessageSquare, Lock, ShieldCheck } from 'lucide-react';
+import { CostBreakdownCard } from './CostBreakdownCard';
 
 interface TopPicksViewProps {
   candidates: FlatmateCandidate[];
@@ -29,7 +30,7 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
             <span>Top Compatibility Picks</span>
           </div>
           <h2 className="text-2xl font-extrabold text-[#F5F5F5]">
-            Handpicked Flatmates Near You
+            Best Matched Flatmates Near You
           </h2>
           <p className="text-xs text-[#B8B8B8] mt-0.5">
             Updated daily based on your sleep routine, cooking preferences, and target flat location.
@@ -111,6 +112,9 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
                   <h3 className="text-xl font-bold flex items-center gap-1.5">
                     <span>{candidate.name}</span>
                     <span className="text-base font-normal text-[#B8B8B8]">{candidate.age}</span>
+                    {candidate.identityVerification?.identityVerified && (
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    )}
                   </h3>
                   <p className="text-xs text-[#FFD43B] font-medium flex items-center gap-1 mt-0.5">
                     <Briefcase className="w-3 h-3" />
@@ -123,8 +127,21 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
                 </div>
               </div>
 
-              {/* Skills Snippet */}
+              {/* Skills & Compatibility Reasons */}
               <div className="p-3.5 space-y-2">
+                {candidate.matchReasons && candidate.matchReasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {candidate.matchReasons.slice(0, 2).map((reason) => (
+                      <span
+                        key={reason}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FFD43B]/15 text-[#FFD43B] border border-[#FFD43B]/30"
+                      >
+                        ✓ {reason}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-1">
                   {candidate.skills.slice(0, 3).map((s) => (
                     <span key={s} className="text-[10px] px-2 py-0.5 rounded bg-[#383838] text-[#F5F5F5] border border-[#484848]">
@@ -132,6 +149,14 @@ export const TopPicksView: React.FC<TopPicksViewProps> = ({
                     </span>
                   ))}
                 </div>
+
+                <CostBreakdownCard
+                  costBreakdown={candidate.costBreakdown}
+                  fallbackBudget={candidate.budget}
+                  hasFlat={candidate.hasFlat}
+                  compact
+                />
+
                 <p className="text-[11px] text-[#B8B8B8] line-clamp-2 italic">
                   &ldquo;{candidate.bio}&rdquo;
                 </p>
