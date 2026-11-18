@@ -100,7 +100,10 @@ export async function verifyAndCompressProfilePhoto(
       throw new Error('Photo upload is too large for verification. Please choose a smaller photo.');
     }
     if (response.status === 404) {
-      throw new Error('AI photo verification backend is unavailable on this host.');
+      const host = typeof window !== 'undefined' ? window.location.host : 'this host';
+      throw new Error(
+        `AI photo verification endpoint (/api/verify-profile-photo) returned 404 on ${host}. Deploy the latest code (including /api routes and GEMINI_API_KEY) or use the AI Studio preview URL.`
+      );
     }
     throw new Error(`AI profile photo verification failed (HTTP ${response.status}). Please try again.`);
   }

@@ -70,7 +70,10 @@ export async function verifyIdentityProof(
       throw new Error('Identity photo is too large. Please upload a smaller image.');
     }
     if (response.status === 404) {
-      throw new Error('Identity verification backend is unavailable on this host.');
+      const host = typeof window !== 'undefined' ? window.location.host : 'this host';
+      throw new Error(
+        `Identity verification endpoint (/api/verify-identity) returned 404 on ${host}. Deploy the latest code (including /api routes and GEMINI_API_KEY) or use the AI Studio preview URL.`
+      );
     }
     throw new Error(`Identity verification service failed (HTTP ${response.status}). Please try again.`);
   }
