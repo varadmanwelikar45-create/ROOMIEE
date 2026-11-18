@@ -19,9 +19,10 @@ import {
   Clock,
   IndianRupee,
   BrainCircuit,
+  ShieldAlert,
 } from 'lucide-react';
 import { UserProfile, Gender, FlatStatus, PersonalityProfile } from '../types';
-import { compressImageFile } from '../utils/storage';
+import { verifyAndCompressProfilePhoto } from '../services/profilePhotoVerifier';
 import { auth, googleProvider } from '../firebase';
 import { computeExpiryIso, loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
 import { FlatPhotoUploader } from './FlatPhotoUploader';
@@ -85,6 +86,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
   const [uploadedFlatPhotos, setUploadedFlatPhotos] = useState<string[]>([]);
   const [photoError, setPhotoError] = useState('');
+  const [isCheckingPhoto, setIsCheckingPhoto] = useState(false);
 
   // Prefill name and email when Google user is authenticated and completing registration
   useEffect(() => {
@@ -96,32 +98,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   }, [firebaseUser]);
 
-  // Handle local profile image upload & compress to fit Firestore document & security rule limits
+  // Inspect profile image with AI detector and compress to fit Firestore document & security rule limits
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Please select a valid image file (PNG, JPG, JPEG, WEBP).');
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setPhotoError('Image size should be under 10MB.');
-      return;
-    }
+    if (!file || isCheckingPhoto) return;
 
     setPhotoError('');
+    setIsCheckingPhoto(true);
     try {
-      const compressedDataUrl = await compressImageFile(file, 520, 0.72);
-      setUploadedPhoto(compressedDataUrl);
+      const result = await verifyAndCompressProfilePhoto(file);
+      if (!result.accepted || !result.compressedDataUrl) {
+        setPhotoError(
+          result.reason ||
+            'AI or stock photo rejected. Please upload a real camera photograph of yourself.'
+        );
+        return;
+      }
+      setUploadedPhoto(result.compressedDataUrl);
     } catch (err) {
       setPhotoError(
         err instanceof Error
           ? err.message
-          : 'Could not process this image. Please try another PNG or JPG file.'
+          : 'Could not verify this profile photo right now. Please try again.'
       );
+    } finally {
+      setIsCheckingPhoto(false);
     }
   };
 
@@ -746,19 +748,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                           </p>
                           <div className="flex items-center gap-2">
                             <label className="text-xs bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] font-semibold px-3 py-1.5 rounded-lg border border-[#484848] cursor-pointer transition-colors inline-flex items-center gap-1">
-                              <Upload className="w-3.5 h-3.5 text-[#FFD43B]" />
-                              <span>Change</span>
+                              {isCheckingPhoto ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#FFD43B]" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5 text-[#FFD43B]" />
+                              )}
+                              <span>{isCheckingPhoto ? 'Scanning...' : 'Change'}</span>
                               <input
                                 type="file"
-                                accept="image/*"
+                                accept="image/png,image/jpeg,image/webp"
+                                disabled={isCheckingPhoto}
                                 onChange={handlePhotoUpload}
                                 className="hidden"
                               />
                             </label>
                             <button
                               type="button"
+                              disabled={isCheckingPhoto}
                               onClick={() => setUploadedPhoto(null)}
-                              className="text-xs text-red-400 hover:text-red-300 px-2 py-1.5 font-medium cursor-pointer"
+                              className="text-xs text-red-400 hover:text-red-300 px-2 py-1.5 font-medium cursor-pointer disabled:opacity-50"
                             >
                               Remove
                             </button>
@@ -766,19 +774,32 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         </div>
                       </div>
                     ) : (
-                      <label className="group flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#555555] hover:border-[#FFD43B] rounded-2xl bg-[#2a2a2a] hover:bg-[#323232] transition-all cursor-pointer text-center">
+                      <label
+                        className={`group flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-2xl bg-[#2a2a2a] transition-all text-center ${
+                          isCheckingPhoto
+                            ? 'border-[#FFD43B]/60 cursor-wait'
+                            : 'border-[#555555] hover:border-[#FFD43B] hover:bg-[#323232] cursor-pointer'
+                        }`}
+                      >
                         <div className="w-12 h-12 rounded-full bg-[#383838] group-hover:bg-[#FFD43B]/20 text-[#FFD43B] flex items-center justify-center mb-2 transition-transform group-hover:scale-110 shadow">
-                          <Upload className="w-6 h-6 stroke-[2.2]" />
+                          {isCheckingPhoto ? (
+                            <Loader2 className="w-6 h-6 animate-spin" />
+                          ) : (
+                            <Upload className="w-6 h-6 stroke-[2.2]" />
+                          )}
                         </div>
                         <span className="text-xs font-bold text-[#F5F5F5] group-hover:text-[#FFD43B]">
-                          Click to select your profile photo
+                          {isCheckingPhoto
+                            ? 'Scanning photo with AI detector...'
+                            : 'Click to select your profile photo'}
                         </span>
                         <span className="text-[10px] text-[#8e8e8e] mt-1">
-                          PNG, JPG, JPEG or WEBP (Max 10MB)
+                          PNG, JPG, or WEBP (Max 10MB)
                         </span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/png,image/jpeg,image/webp"
+                          disabled={isCheckingPhoto}
                           onChange={handlePhotoUpload}
                           className="hidden"
                         />
@@ -797,9 +818,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     )}
 
                     {photoError && (
-                      <p className="text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800 mt-3 font-medium">
-                        {photoError}
-                      </p>
+                      <div className="text-xs text-red-300 bg-red-950/45 p-2.5 rounded-lg border border-red-800 mt-3 font-medium flex items-start gap-2">
+                        <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <span>{photoError}</span>
+                      </div>
                     )}
                   </div>
 

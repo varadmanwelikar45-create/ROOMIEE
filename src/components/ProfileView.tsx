@@ -19,6 +19,8 @@ import {
   BrainCircuit,
   ShieldCheck,
   IndianRupee,
+  Loader2,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -27,7 +29,7 @@ import {
   CostBreakdown,
   IdentityVerificationInfo,
 } from '../types';
-import { compressImageFile } from '../utils/storage';
+import { verifyAndCompressProfilePhoto } from '../services/profilePhotoVerifier';
 import { FlatPhotoUploader } from './FlatPhotoUploader';
 import { CostBreakdownCard } from './CostBreakdownCard';
 import { IdentityTrustPanel } from './IdentityTrustPanel';
@@ -65,6 +67,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
     currentUser.listingDurationDays || 14
   );
   const [photoError, setPhotoError] = useState('');
+  const [isCheckingPhoto, setIsCheckingPhoto] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -93,17 +96,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Please select a valid image file.');
-      return;
-    }
+    if (!file || isCheckingPhoto) return;
+
     setPhotoError('');
+    setIsCheckingPhoto(true);
     try {
-      const dataUrl = await compressImageFile(file, 520, 0.72);
-      setEditedPhotos([dataUrl, ...editedPhotos.slice(1)]);
-    } catch {
-      setPhotoError('Could not process this image. Please try another PNG or JPG file.');
+      const result = await verifyAndCompressProfilePhoto(file);
+      if (!result.accepted || !result.compressedDataUrl) {
+        setPhotoError(
+          result.reason ||
+            'AI or stock photo rejected. Please upload a real camera photograph of yourself.'
+        );
+        return;
+      }
+      setEditedPhotos([result.compressedDataUrl, ...editedPhotos.slice(1)]);
+    } catch (err) {
+      setPhotoError(
+        err instanceof Error
+          ? err.message
+          : 'Could not verify this image right now. Please try again.'
+      );
+    } finally {
+      setIsCheckingPhoto(false);
     }
   };
 
@@ -306,21 +320,31 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   </div>
                 </div>
 
-                <label className="py-1.5 px-3 bg-[#383838] hover:bg-[#444444] text-[#FFD43B] font-semibold text-xs rounded-xl border border-[#484848] transition-colors cursor-pointer flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Choose Photo</span>
+                <label
+                  className={`py-1.5 px-3 bg-[#383838] hover:bg-[#444444] text-[#FFD43B] font-semibold text-xs rounded-xl border border-[#484848] transition-colors flex items-center gap-1.5 ${
+                    isCheckingPhoto ? 'opacity-70 cursor-wait' : 'cursor-pointer'
+                  }`}
+                >
+                  {isCheckingPhoto ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isCheckingPhoto ? 'Scanning...' : 'Choose Photo'}</span>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={isCheckingPhoto}
                     onChange={handlePhotoUpload}
                     className="hidden"
                   />
                 </label>
               </div>
               {photoError && (
-                <p className="text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800">
-                  {photoError}
-                </p>
+                <div className="text-xs text-red-300 bg-red-950/45 p-2.5 rounded-lg border border-red-800 flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span>{photoError}</span>
+                </div>
               )}
 
               {/* Flat Status Yes / No */}

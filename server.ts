@@ -117,8 +117,8 @@ async function generateStructuredVisionJson<T>(params: {
     attempts: number;
     timeoutMs: number;
   }> = [
-    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, attempts: 1, timeoutMs: 7000 },
-    { model: 'gemini-3.1-flash-lite', attempts: 2, timeoutMs: 9000 },
+    { model: 'gemini-3.1-flash-lite', attempts: 2, timeoutMs: 12000 },
+    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, attempts: 1, timeoutMs: 12000 },
   ];
 
   const now = Date.now();
@@ -275,8 +275,8 @@ async function startServer() {
         systemInstruction:
           'You are a strict digital photo forensics and real-estate image authenticity inspector. ' +
           'Analyze the uploaded image carefully for signs of AI image generation (Midjourney, DALL-E, Flux, Stable Diffusion, Imagen, Adobe Firefly) or 3D CGI architectural renders (Blender/V-Ray showroom renders). ' +
-          'Look closely for: hyper-smooth plastic textures, unnatural volumetric showroom lighting, warped or melting furniture legs/lines, impossible window mullions or door frames, asymmetrical tiles or ceiling fixtures, garbled text/numbers on clocks/appliances, floating decor, or AI generator watermarks/sparkles in corners. ' +
-          'Conversely, authentic smartphone/camera flat photos typically show natural indoor lighting/shadows, consistent geometry, real wall switches/wiring/AC pipes, lived-in details, realistic reflections, and authentic lens perspective. ' +
+          'Look closely for: hyper-smooth plastic textures, unnatural volumetric showroom lighting or uniform HDR glow, warped or melting furniture legs/lines, impossible window mullions or door frames, asymmetrical tiles or ceiling fixtures, garbled text/numbers on clocks/appliances, floating decor, or AI generator watermarks/four-point sparkles in corners. ' +
+          'Conversely, authentic smartphone/camera flat photos typically show natural indoor lighting/shadows, consistent geometry, real wall switches/wiring/AC pipes, lived-in details, realistic reflections, and authentic lens perspective. Do NOT falsely mark genuine tidy or sunlit real-world apartment photos as AI-generated unless real synthetic/CGI artifacts are present. ' +
           'If the image is AI-generated, CGI-rendered, a cartoon/illustration, or NOT a real flat/room/building photo, mark it so it will be rejected. ' +
           'Return concise, helpful user-facing explanations in `reason` and specific visual cues in `detectedIndicators`.',
         responseSchema: {
@@ -461,6 +461,127 @@ async function startServer() {
         return;
       }
       res.status(502).json({ error: 'Could not complete identity verification right now. Please try again.' });
+    }
+  });
+
+  app.post('/api/verify-profile-photo', async (req: Request, res: Response) => {
+    const body = (req.body || {}) as VerifyFlatPhotoBody;
+    const rawBase64 = typeof body.imageBase64 === 'string' ? body.imageBase64.trim() : '';
+    const mimeType = typeof body.mimeType === 'string' ? body.mimeType.trim().toLowerCase() : 'image/jpeg';
+
+    if (!rawBase64) {
+      res.status(400).json({ error: 'Missing imageBase64 payload.' });
+      return;
+    }
+
+    if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
+      res.status(200).json({
+        accepted: false,
+        isAiGenerated: false,
+        isRealCameraPhoto: false,
+        hasRealPerson: false,
+        confidence: 100,
+        reason: 'Only real camera image formats (JPG, PNG, WEBP) are supported for profile photos.',
+        detectedIndicators: ['Unsupported or non-photographic file format'],
+      });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({
+        error: 'Server Gemini API key is not configured. Check Settings > Secrets.',
+      });
+      return;
+    }
+
+    const cleanedBase64 = rawBase64.includes(',') ? rawBase64.split(',')[1] || '' : rawBase64;
+    if (!cleanedBase64 || cleanedBase64.length > 6 * 1024 * 1024) {
+      res.status(400).json({
+        error: 'Image payload is empty or exceeds the maximum 4MB inspection limit.',
+      });
+      return;
+    }
+
+    try {
+      const parsed = await generateStructuredVisionJson<{
+        isAiGenerated: boolean;
+        isRealCameraPhoto: boolean;
+        hasRealPerson: boolean;
+        isStockWatermarked: boolean;
+        confidence: number;
+        reason: string;
+        detectedIndicators: string[];
+      }>({
+        apiKey,
+        mimeType,
+        base64Data: cleanedBase64,
+        promptText:
+          'Inspect this user profile photo for a flatmate matching platform. Determine strictly: ' +
+          '(1) Is it AI-generated, a synthetic portrait/deepfake, anime, cartoon, or 3D avatar? ' +
+          '(2) Does it have stock photo watermarks? ' +
+          '(3) Is it a genuine real-world camera photograph showing a real human person?',
+        systemInstruction:
+          'You are a strict digital photo authenticity inspector for user profile photos. ' +
+          'Reject AI-generated faces/portraits (Midjourney, Flux, DALL-E, Imagen, Stable Diffusion, Lensa/Remini AI avatars), ' +
+          'cartoons/anime/illustrations, CGI characters, watermarked stock photos, blank/solid graphics, or photos with no real human person. ' +
+          'Look closely for waxy plastic skin, uncanny overly symmetrical eyes/teeth, melted hair/glasses/ears, surreal bokeh glow, or AI corner watermarks/sparkles. ' +
+          'Conversely, approve genuine smartphone selfies, casual portraits, and real-world photos of real people (including natural indoor/outdoor lighting or standard phone portrait mode). ' +
+          'Return concise user-facing feedback in `reason` and specific cues in `detectedIndicators`.',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isAiGenerated: { type: Type.BOOLEAN },
+            isRealCameraPhoto: { type: Type.BOOLEAN },
+            hasRealPerson: { type: Type.BOOLEAN },
+            isStockWatermarked: { type: Type.BOOLEAN },
+            confidence: { type: Type.INTEGER },
+            reason: { type: Type.STRING },
+            detectedIndicators: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: [
+            'isAiGenerated',
+            'isRealCameraPhoto',
+            'hasRealPerson',
+            'isStockWatermarked',
+            'confidence',
+            'reason',
+            'detectedIndicators',
+          ],
+        },
+      });
+
+      const isAiGenerated = Boolean(parsed.isAiGenerated);
+      const isRealCameraPhoto = Boolean(parsed.isRealCameraPhoto);
+      const hasRealPerson = Boolean(parsed.hasRealPerson);
+      const isStockWatermarked = Boolean(parsed.isStockWatermarked);
+      const accepted = !isAiGenerated && !isStockWatermarked && isRealCameraPhoto && hasRealPerson;
+
+      res.status(200).json({
+        accepted,
+        isAiGenerated,
+        isRealCameraPhoto,
+        hasRealPerson,
+        confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(100, parsed.confidence)) : 88,
+        reason:
+          typeof parsed.reason === 'string' && parsed.reason.trim()
+            ? parsed.reason.trim()
+            : accepted
+              ? 'Verified as an authentic real-world profile photo.'
+              : 'Image rejected because it appears AI-generated, stock-watermarked, or not a real person photo.',
+        detectedIndicators: Array.isArray(parsed.detectedIndicators)
+          ? parsed.detectedIndicators.slice(0, 4).map(String)
+          : [],
+      });
+    } catch (err) {
+      console.error('Gemini profile photo verification error:', err);
+      if (err instanceof GeminiServiceError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      res.status(502).json({
+        error: 'Could not inspect this profile photo right now. Please try again in a moment.',
+      });
     }
   });
 
