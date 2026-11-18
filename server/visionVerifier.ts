@@ -1,5 +1,15 @@
+import 'dotenv/config';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+
+function getServerGeminiApiKey(): string {
+  return (
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    ''
+  ).trim();
+}
 
 export interface VerifyPhotoRequestBody {
   imageBase64?: unknown;
@@ -277,12 +287,13 @@ export async function verifyFlatPhotoRequest(rawBody: VerifyPhotoRequestBody): P
     };
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getServerGeminiApiKey();
   if (!apiKey) {
     return {
       status: 500,
       body: {
-        error: 'GEMINI_API_KEY is not configured on this server. Check Settings > Secrets or deployment environment variables.',
+        error:
+          'GEMINI_API_KEY is not configured on this server. Add GEMINI_API_KEY in Settings > Secrets (AI Studio) or Project Settings > Environment Variables (Vercel) and redeploy.',
       },
     };
   }
@@ -380,12 +391,13 @@ export async function verifyProfilePhotoRequest(rawBody: VerifyPhotoRequestBody)
     };
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getServerGeminiApiKey();
   if (!apiKey) {
     return {
       status: 500,
       body: {
-        error: 'GEMINI_API_KEY is not configured on this server. Check Settings > Secrets or deployment environment variables.',
+        error:
+          'GEMINI_API_KEY is not configured on this server. Add GEMINI_API_KEY in Settings > Secrets (AI Studio) or Project Settings > Environment Variables (Vercel) and redeploy.',
       },
     };
   }
@@ -489,12 +501,13 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
     };
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getServerGeminiApiKey();
   if (!apiKey) {
     return {
       status: 500,
       body: {
-        error: 'GEMINI_API_KEY is not configured on this server. Check Settings > Secrets or deployment environment variables.',
+        error:
+          'GEMINI_API_KEY is not configured on this server. Add GEMINI_API_KEY in Settings > Secrets (AI Studio) or Project Settings > Environment Variables (Vercel) and redeploy.',
       },
     };
   }
