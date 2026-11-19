@@ -267,10 +267,10 @@ export const GmailView: React.FC<GmailViewProps> = ({
           </div>
 
           <h2 className="text-2xl font-extrabold text-[#F5F5F5] mb-2">
-            Connect Gmail for Flatmate Outreach
+            Connect Gmail
           </h2>
-          <p className="text-xs text-[#B8B8B8] max-w-md mx-auto mb-6 leading-relaxed">
-            Read landlord or broker replies, search housing threads, and send flat-visit invitations directly from your Gmail account with your permission.
+          <p className="text-xs text-[#B8B8B8] max-w-sm mx-auto mb-6 leading-relaxed">
+            Search housing threads and send flat visit inquiries directly from your Gmail account.
           </p>
 
           {authError && (
@@ -316,10 +316,6 @@ export const GmailView: React.FC<GmailViewProps> = ({
               {isConnecting ? 'Connecting to Google...' : 'Sign in with Google'}
             </span>
           </button>
-
-          <p className="text-[11px] text-[#8e8e8e] mt-5">
-            Access tokens stay strictly in memory for your active session and are cleared on sign out.
-          </p>
         </div>
       </div>
     );
@@ -327,15 +323,14 @@ export const GmailView: React.FC<GmailViewProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6">
-      {/* Top Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#383838]">
         <div>
           <h2 className="text-xl font-extrabold text-[#F5F5F5] flex items-center gap-2">
             <Mail className="w-5 h-5 text-[#FFD43B]" />
-            <span>Gmail Flatmate Hub</span>
+            <span>Gmail</span>
           </h2>
           <p className="text-xs text-[#B8B8B8]">
-            Connected as <span className="text-[#FFD43B] font-semibold">{gmailEmail || currentUser.email}</span>
+            {gmailEmail || currentUser.email}
           </p>
         </div>
 
@@ -536,14 +531,9 @@ export const GmailView: React.FC<GmailViewProps> = ({
           onSubmit={handleRequestSend}
           className="bg-[#303030] border border-[#484848] rounded-3xl p-6 shadow-2xl space-y-4"
         >
-          <div>
-            <h3 className="text-base font-extrabold text-[#F5F5F5]">
-              Compose Email via Gmail
-            </h3>
-            <p className="text-xs text-[#B8B8B8] mt-0.5">
-              Send flat visit details, broker inquiries, or rent-split notes directly from {gmailEmail || 'your Gmail'}.
-            </p>
-          </div>
+          <h3 className="text-base font-extrabold text-[#F5F5F5]">
+            New Email
+          </h3>
 
           <div>
             <label className="block text-xs font-semibold text-[#B8B8B8] mb-1">

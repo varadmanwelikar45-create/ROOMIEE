@@ -1,15 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
-  Home,
   MapPin,
-  Sparkles,
   Heart,
   MessageSquare,
   Send,
   ArrowLeft,
-  ShieldCheck,
-  Clock,
   CheckCircle2,
   Loader2,
   Plus,
@@ -24,8 +20,7 @@ import {
   subscribeToGroupMessages,
   updateGroupStatus,
 } from '../services/roomieDb';
-import { computeGroupCompatibility, getListingExpiryStatus } from '../utils/compatibility';
-import { CostBreakdownCard } from './CostBreakdownCard';
+import { computeCostTotals, computeGroupCompatibility, formatINR } from '../utils/compatibility';
 
 interface GroupsViewProps {
   currentUser: UserProfile;
@@ -253,7 +248,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
     const isMember = selectedGroupChat.memberUids.includes(currentUser.id);
     return (
       <div className="w-full max-w-3xl mx-auto px-4 py-4">
-        <div className="bg-[#303030] border border-[#484848] rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[calc(100vh-205px)] min-h-[480px] max-h-[660px]">
+        <div className="bg-[#303030] border border-[#484848] rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[calc(100vh-190px)] min-h-[480px] max-h-[660px]">
           <div className="p-4 bg-[#2a2a2a] border-b border-[#3d3d3d] flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -278,7 +273,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
 
               <div className="min-w-0">
                 <h3 className="text-sm font-extrabold text-[#F5F5F5] truncate">
-                  {selectedGroupChat.memberNames.join(' & ')} · +1 Group Chat
+                  {selectedGroupChat.memberNames.join(' & ')}
                 </h3>
                 <p className="text-[11px] text-[#FFD43B] truncate flex items-center gap-1">
                   <MapPin className="w-3 h-3 shrink-0" />
@@ -296,36 +291,29 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
                 onClick={handleMarkGroupFull}
                 className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold cursor-pointer shrink-0 disabled:opacity-60"
               >
-                {markingFull ? 'Updating...' : 'Mark Group Full'}
+                {markingFull ? 'Updating...' : 'Mark Full'}
               </button>
             )}
           </div>
 
           {/* Messages Body */}
           <div className="flex-1 p-4 overflow-y-auto bg-[#252525] space-y-3">
-            <div className="text-center my-1">
-              <span className="text-[10px] text-[#B8B8B8] bg-[#303030] px-3 py-1 rounded-full border border-[#444444]">
-                Duo Group ({selectedGroupChat.memberNames.join(' + ')}) seeking 1 more flatmate in{' '}
-                {selectedGroupChat.area}
-              </span>
-            </div>
-
             {groupMessages.length === 0 ? (
-              <div className="text-center py-8 space-y-3">
+              <div className="text-center py-10 space-y-3">
                 <p className="text-xs text-[#8e8e8e]">
-                  Start chatting with {selectedGroupChat.memberNames.join(' & ')} to see if the 3rd room fits!
+                  Message {selectedGroupChat.memberNames.join(' & ')} about the 3rd room.
                 </p>
                 <button
                   type="button"
                   disabled={isSending}
                   onClick={() =>
                     sendGroupText(
-                      `Hi ${selectedGroupChat.memberNames.join(' & ')}! I saw your duo group in ${selectedGroupChat.area} and would love to join as the 3rd flatmate.`
+                      `Hi ${selectedGroupChat.memberNames.join(' & ')}! I saw your group in ${selectedGroupChat.area} and would love to join as the 3rd flatmate.`
                     )
                   }
                   className="px-4 py-2 rounded-xl bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs cursor-pointer disabled:opacity-60"
                 >
-                  Say Hello to Duo
+                  Say Hello
                 </button>
               </div>
             ) : (
@@ -364,7 +352,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
               type="text"
               value={msgText}
               onChange={(e) => setMsgText(e.target.value)}
-              placeholder="Message the group about 3 BHK rooms, rent split..."
+              placeholder="Message the group..."
               className="flex-1 px-3.5 py-2.5 bg-[#242424] border border-[#444444] rounded-xl text-xs text-[#F5F5F5] placeholder-[#666666] focus:outline-none focus:border-[#FFD43B]"
             />
             <button
@@ -381,19 +369,12 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-6 pb-24 space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#383838]">
+    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#383838]">
         <div>
-          <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-1">
-            <Users className="w-4 h-4" />
-            <span>Group Matching · Duo +1 Mode</span>
-          </div>
-          <h2 className="text-2xl font-extrabold text-[#F5F5F5]">
-            Connected Duos Looking for 1 More Flatmate
-          </h2>
+          <h2 className="text-2xl font-extrabold text-[#F5F5F5]">Duo Groups</h2>
           <p className="text-xs text-[#B8B8B8] mt-0.5">
-            Already connected with a roomie and need a 3rd person? Team up so other swipers see you together!
+            Paired flatmates looking for 1 more roommate.
           </p>
         </div>
 
@@ -401,15 +382,15 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
           type="button"
           onClick={() => setShowCreateModal(true)}
           disabled={matchedCandidates.length === 0}
-          className="px-4 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-extrabold text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer disabled:opacity-45 shrink-0"
+          className="px-4 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer disabled:opacity-45 shrink-0"
           title={
             matchedCandidates.length === 0
-              ? 'Connect with a flatmate first to form a duo group'
-              : 'Team up with a connected flatmate'
+              ? 'Connect with a flatmate first to create a duo'
+              : 'Create a duo group'
           }
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Team Up With Match (+1 Needed)</span>
+          <span>Create Duo</span>
         </button>
       </div>
 
@@ -419,25 +400,20 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
         </p>
       )}
 
-      {/* Groups Grid */}
       {groups.length === 0 ? (
-        <div className="bg-[#303030] border border-[#444444] rounded-3xl p-10 text-center shadow-xl">
-          <div className="w-16 h-16 rounded-2xl bg-[#FFD43B]/10 border border-[#FFD43B]/30 text-[#FFD43B] flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8" />
-          </div>
-          <h3 className="text-xl font-bold text-[#F5F5F5] mb-2">
-            No Active Duo Groups Yet
-          </h3>
-          <p className="text-xs text-[#B8B8B8] max-w-md mx-auto mb-5">
-            Once two connected flatmates team up looking for a 3rd roommate, their combined Duo card appears here and inside the main Discover swipe deck.
+        <div className="bg-[#303030] border border-[#444444] rounded-3xl p-10 text-center">
+          <Users className="w-8 h-8 text-[#FFD43B] mx-auto mb-3" />
+          <h3 className="text-lg font-bold text-[#F5F5F5] mb-1">No Active Groups</h3>
+          <p className="text-xs text-[#B8B8B8] max-w-sm mx-auto mb-4">
+            Team up with a connected match when you need one more flatmate.
           </p>
           {matchedCandidates.length > 0 && (
             <button
               type="button"
               onClick={() => setShowCreateModal(true)}
-              className="px-5 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl shadow cursor-pointer"
+              className="px-5 py-2.5 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-bold text-xs rounded-xl cursor-pointer"
             >
-              Form First Duo Group With {matchedCandidates[0].name.split(' ')[0]}
+              Create Duo With {matchedCandidates[0].name.split(' ')[0]}
             </button>
           )}
         </div>
@@ -446,33 +422,15 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
           {groups.map((group) => {
             const isMember = group.memberUids.includes(currentUser.id);
             const isInterested = interestedGroupIds.includes(group.groupId);
-            const expiry = getListingExpiryStatus(group.expiresAt);
             const fitScore = computeGroupCompatibility(currentUser, group);
+            const costTotals = computeCostTotals(group.costBreakdown, group.budgetPerPerson);
 
             return (
               <div
                 key={group.groupId}
-                className="bg-[#303030] border border-[#444444] hover:border-[#FFD43B]/70 rounded-3xl overflow-hidden shadow-xl flex flex-col justify-between transition-all"
+                className="bg-[#303030] border border-[#444444] hover:border-[#FFD43B]/70 rounded-3xl overflow-hidden shadow-lg flex flex-col justify-between transition-colors"
               >
-                <div className="p-5 space-y-4">
-                  {/* Top Badges */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-[11px] font-extrabold bg-[#FFD43B] text-[#242424] px-3 py-1 rounded-full inline-flex items-center gap-1.5 shadow">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>2 TOGETHER · NEED +{group.openSpots}</span>
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold bg-[#242424] text-emerald-300 border border-emerald-500/35 px-2.5 py-0.5 rounded-full">
-                        {fitScore}% Fit
-                      </span>
-                      <span className="text-[10px] text-[#B8B8B8] bg-[#242424] border border-[#444444] px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5 text-[#FFD43B]" />
-                        <span>{expiry.label}</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Paired Member Portraits */}
+                <div className="p-5 space-y-3.5">
                   <div className="flex items-center gap-3.5">
                     <div className="flex items-center -space-x-3 shrink-0">
                       {group.memberPhotos.slice(0, 2).map((pic, i) => (
@@ -480,19 +438,23 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
                           key={i}
                           src={pic}
                           alt={`Group member ${i + 1}`}
-                          className="w-16 h-16 rounded-2xl object-cover border-2 border-[#FFD43B] bg-[#242424] shadow-lg"
+                          className="w-14 h-14 rounded-2xl object-cover border-2 border-[#FFD43B] bg-[#242424]"
                         />
                       ))}
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-extrabold text-[#F5F5F5] truncate">
-                        {group.memberNames.join(' & ')}
-                      </h3>
-                      <p className="text-xs text-[#FFD43B] font-semibold flex items-center gap-1">
-                        <Home className="w-3.5 h-3.5 shrink-0" />
-                        <span className="truncate">{group.bhkType}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-base font-extrabold text-[#F5F5F5] truncate">
+                          {group.memberNames.join(' & ')}
+                        </h3>
+                        <span className="text-xs font-bold text-[#FFD43B] shrink-0">
+                          {fitScore}% Match
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#FFD43B] font-semibold truncate">
+                        {group.bhkType} · Needs +{group.openSpots}
                       </p>
-                      <p className="text-[11px] text-[#B8B8B8] flex items-center gap-1 mt-0.5">
+                      <p className="text-[11px] text-[#B8B8B8] flex items-center gap-1 mt-0.5 truncate">
                         <MapPin className="w-3 h-3 text-[#FFD43B] shrink-0" />
                         <span className="truncate">
                           {group.area}, {group.city} · {group.budgetPerPerson}
@@ -501,72 +463,56 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Vibe + Bio */}
-                  <div className="space-y-2">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#383838] text-[#FFD43B] border border-[#484848]">
-                      <Sparkles className="w-3 h-3" />
-                      <span>{group.vibeSummary}</span>
-                    </span>
-                    <p className="text-xs text-[#B8B8B8] leading-relaxed bg-[#242424] p-3 rounded-xl border border-[#3d3d3d]">
-                      &ldquo;{group.bio}&rdquo;
-                    </p>
-                  </div>
+                  <p className="text-xs text-[#B8B8B8] leading-relaxed line-clamp-2">
+                    {group.bio}
+                  </p>
 
-                  {/* Flat Photos Strip */}
                   {group.flatPhotos.length > 0 && (
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-emerald-300 inline-flex items-center gap-1">
-                        <ShieldCheck className="w-3 h-3" />
-                        <span>AI-Verified Shared Flat Photos</span>
-                      </span>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {group.flatPhotos.slice(0, 3).map((fp, i) => (
-                          <img
-                            key={i}
-                            src={fp}
-                            alt={`Group flat ${i + 1}`}
-                            className="aspect-[4/3] w-full rounded-lg object-cover border border-[#484848]"
-                          />
-                        ))}
-                      </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {group.flatPhotos.slice(0, 3).map((fp, i) => (
+                        <img
+                          key={i}
+                          src={fp}
+                          alt={`Group flat ${i + 1}`}
+                          className="aspect-[4/3] w-full rounded-lg object-cover border border-[#484848]"
+                        />
+                      ))}
                     </div>
                   )}
 
-                  {/* Per-Person Cost Breakdown */}
-                  <CostBreakdownCard
-                    costBreakdown={group.costBreakdown}
-                    fallbackBudget={group.budgetPerPerson}
-                    hasFlat={group.hasFlat}
-                    compact
-                  />
+                  <div className="flex items-center justify-between text-[11px] text-[#8e8e8e] pt-1 border-t border-[#3b3b3b]">
+                    <span>Est. Monthly Share</span>
+                    <span className="font-bold text-[#F5F5F5]">
+                      {formatINR(costTotals.totalMonthly)}/mo
+                    </span>
+                  </div>
                 </div>
 
-                {/* Action Footer */}
                 <div className="p-4 pt-0">
                   {isMember ? (
                     <button
                       type="button"
                       onClick={() => handleOpenGroupChat(group)}
-                      className="w-full py-2.5 px-4 bg-[#383838] hover:bg-[#444444] text-[#FFD43B] border border-[#FFD43B]/40 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full min-h-[44px] px-4 bg-[#383838] hover:bg-[#444444] text-[#FFD43B] border border-[#FFD43B]/40 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Your Duo Group · Open Group Chat</span>
+                      <span>Open Group Chat</span>
                     </button>
                   ) : isInterested ? (
                     <button
                       type="button"
                       onClick={() => handleOpenGroupChat(group)}
-                      className="w-full py-2.5 px-4 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
+                      className="w-full min-h-[44px] px-4 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <MessageSquare className="w-4 h-4" />
-                      <span>Say Hello to Duo · Open Group Chat</span>
+                      <span>Open Group Chat</span>
                     </button>
                   ) : (
                     <button
                       type="button"
                       disabled={markingGroupId === group.groupId}
                       onClick={() => handleMarkInterestedInGroup(group)}
-                      className="w-full py-2.5 px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-extrabold text-xs rounded-xl shadow flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                      className="w-full min-h-[44px] px-4 bg-[#FFD43B] hover:bg-[#ffe066] text-[#242424] font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
                     >
                       {markingGroupId === group.groupId ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -574,9 +520,7 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
                         <Heart className="w-4 h-4 fill-current" />
                       )}
                       <span>
-                        {markingGroupId === group.groupId
-                          ? 'Unlocking Chat...'
-                          : "I'm Interested in Joining This Duo"}
+                        {markingGroupId === group.groupId ? 'Joining...' : 'Join Conversation'}
                       </span>
                     </button>
                   )}
@@ -684,10 +628,10 @@ export const GroupsView: React.FC<GroupsViewProps> = ({
                 {creatingGroup ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Publishing Duo to Discover Deck...</span>
+                    <span>Publishing Duo to Living Circles...</span>
                   </>
                 ) : (
-                  <span>Publish Group (Show Together While Swapping)</span>
+                  <span>Publish Group to Living Circles</span>
                 )}
               </button>
             </form>

@@ -149,8 +149,8 @@ async function generateStructuredVisionJson<T>(params: {
     attempts: number;
     timeoutMs: number;
   }> = [
-    { model: 'gemini-3.1-flash-lite', attempts: 2, timeoutMs: 12000 },
-    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, attempts: 1, timeoutMs: 12000 },
+    { model: 'gemini-3.1-flash-lite', attempts: 1, timeoutMs: 22000 },
+    { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW, attempts: 1, timeoutMs: 22000 },
   ];
 
   const now = Date.now();
@@ -515,7 +515,7 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
   try {
     const promptContext =
       verificationType === 'selfie_liveness'
-        ? 'Verify that this is an authentic, unedited live camera selfie of a real human person (not AI-generated, not a cartoon, not a photo of another phone/monitor screen, and face is clearly visible).'
+        ? 'Verify that this is an authentic camera selfie of a real human person (not AI-generated, not a cartoon/avatar, not a photo of another phone/monitor screen, and a human face is visible). Natural indoor lighting, eyeglasses, or typical laptop/phone webcam quality are acceptable.'
         : 'Verify that this is a genuine, real-world photograph of a physical student/workplace/government ID card held or placed on a real surface (not an AI-generated mockup, not a blank/random image, and not an obvious digital template). Do NOT output or transcribe any sensitive ID numbers.';
 
     const parsed = await generateStructuredVisionJson<GeminiIdentityCheckResult>({
@@ -526,8 +526,8 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
       systemInstruction:
         'You are a strict trust & safety identity verification inspector. ' +
         'Never return or repeat personal ID numbers or Aadhaar/PAN digits. ' +
-        'Detect AI faces/deepfakes, screen-moiré recaptures, cartoons, or irrelevant objects. ' +
-        'Approve ONLY genuine real-world camera photos matching the requested verification type.',
+        'Reject AI-generated faces/deepfakes, screen-moiré recaptures (photos of another screen), cartoons, solid/blank frames, or irrelevant objects. ' +
+        'Approve genuine real-world webcam or smartphone camera photos matching the requested verification type, including standard indoor lighting and close-up selfies.',
       responseSchema: {
         type: Type.OBJECT,
         properties: {

@@ -1,17 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { Loader2, Users, Flame, Clock, RefreshCw, ShieldAlert, X, Flag, Ban } from 'lucide-react';
-import { UserProfile, FlatmateCandidate, RoomieGroup } from './types';
+import { Loader2, Clock, RefreshCw, ShieldAlert, X, Flag, Ban } from 'lucide-react';
+import { UserProfile, FlatmateCandidate, RoomieGroup, LivingCircleId } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { AppHeader, AppTab } from './components/AppHeader';
-import { DiscoveryDeck } from './components/DiscoveryDeck';
+import { LivingCirclesView } from './components/LivingCirclesView';
 import { MatchesView } from './components/MatchesView';
 import { TopPicksView } from './components/TopPicksView';
 import { GroupsView } from './components/GroupsView';
 import { ProfileView } from './components/ProfileView';
 import { GmailView, GmailComposePrefill } from './components/GmailView';
 import { ChatScreen } from './components/ChatScreen';
-import { CityBuildings } from './components/CityBuildings';
 import { auth, clearGmailAccessToken } from './firebase';
 import {
   FirestoreMatchRecord,
@@ -26,12 +25,14 @@ import {
   subscribeToCommunityProfiles,
   subscribeToSeekingGroups,
   subscribeToUserMatches,
+  updateUserLivingCirclesInDb,
 } from './services/roomieDb';
 import {
   computeCompatibility,
   getListingExpiryStatus,
   isListingExpired,
 } from './utils/compatibility';
+import { getEffectiveLivingCircles } from './utils/livingCircles';
 
 export default function App() {
   const [authReady, setAuthReady] = useState(false);
@@ -211,12 +212,25 @@ export default function App() {
     [currentUser]
   );
 
-  const handlePassFlatmate = useCallback(
-    (candidate: FlatmateCandidate) => {
+  const handleToggleLivingCircle = useCallback(
+    async (circleId: LivingCircleId) => {
       if (!currentUser) return;
-      recordSwipeAndConnect(currentUser.id, candidate, 'pass').catch((err) => {
-        console.error('Failed to record pass:', err);
-      });
+      const current = getEffectiveLivingCircles(currentUser);
+      const exists = current.includes(circleId);
+      if (exists && current.length <= 1) return;
+
+      const nextCircles = exists
+        ? current.filter((c) => c !== circleId)
+        : [...current, circleId].slice(0, 4);
+
+      setCurrentUser((prev) => (prev ? { ...prev, livingCircles: nextCircles } : prev));
+      try {
+        const saved = await updateUserLivingCirclesInDb(currentUser.id, nextCircles);
+        setCurrentUser((prev) => (prev ? { ...prev, livingCircles: saved } : prev));
+      } catch (err) {
+        setCurrentUser((prev) => (prev ? { ...prev, livingCircles: current } : prev));
+        throw err;
+      }
     },
     [currentUser]
   );
@@ -455,8 +469,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Main App Body (extra bottom padding for Bottom Group Option dock) */}
-          <main className="flex-1 pb-24 relative z-10">
+          {/* Main App Body */}
+          <main className="flex-1 pb-8 relative z-10">
             {chatTarget ? (
               <ChatScreen
                 currentUser={currentUser}
@@ -472,17 +486,13 @@ export default function App() {
             ) : (
               <>
                 {currentTab === 'discover' && (
-                  <DiscoveryDeck
+                  <LivingCirclesView
                     candidates={discoveryCandidates}
-                    groups={roomieGroups}
                     currentUser={currentUser}
                     matchedIds={effectiveMatchedIds}
-                    interestedGroupIds={interestedGroupIds}
+                    onToggleCircle={handleToggleLivingCircle}
                     onConnectFlatmate={handleConnectFlatmate}
-                    onPassFlatmate={handlePassFlatmate}
                     onOpenChatWith={handleOpenChatWith}
-                    onGroupInterested={handleGroupInterested}
-                    onOpenGroupChat={handleOpenGroupChat}
                     onReportOrBlock={(cand, mode) => setSafetyModal({ candidate: cand, mode })}
                     genderFilter={genderFilter}
                     onGenderFilterChange={setGenderFilter}
@@ -542,47 +552,6 @@ export default function App() {
               </>
             )}
           </main>
-
-          {/* BOTTOM GROUP OPTION BAR */}
-          {!chatTarget && (
-            <div className="fixed bottom-3 inset-x-0 z-40 px-4 pointer-events-none">
-              <div className="max-w-md mx-auto bg-[#2a2a2a]/95 backdrop-blur-md border border-[#484848] rounded-2xl p-1.5 shadow-2xl flex items-center gap-1.5 pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTab('discover')}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    currentTab === 'discover'
-                      ? 'bg-[#FFD43B] text-[#242424] shadow'
-                      : 'text-[#B8B8B8] hover:text-[#F5F5F5] hover:bg-[#343434]'
-                  }`}
-                >
-                  <Flame className="w-4 h-4" />
-                  <span>Discover Solo + Duo</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTab('groups')}
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    currentTab === 'groups'
-                      ? 'bg-emerald-400 text-[#1c1c1c] shadow'
-                      : 'bg-[#343434] text-emerald-300 hover:bg-[#3d3d3d] border border-emerald-500/30'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Group Option (+1)</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold leading-none ${
-                      currentTab === 'groups'
-                        ? 'bg-[#1c1c1c] text-emerald-300'
-                        : 'bg-emerald-500/20 text-emerald-300'
-                    }`}
-                  >
-                    {roomieGroups.length}
-                  </span>
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* IN-APP SAFETY REPORT / BLOCK MODAL */}
           {safetyModal && (
@@ -648,7 +617,7 @@ export default function App() {
                     <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     <p>
                       Blocking <span className="text-[#F5F5F5] font-bold">{safetyModal.candidate.name}</span>{' '}
-                      immediately removes them from your Discover feed, Top Picks, and Matches list.
+                      immediately removes them from your feed and matches.
                     </p>
                   </div>
                 )}
@@ -693,9 +662,6 @@ export default function App() {
           )}
         </>
       )}
-
-      {/* Modern Skyline Buildings at Bottom Right & Left */}
-      <CityBuildings />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Gender,
   GroupMessage,
   IdentityVerificationInfo,
+  LivingCircleId,
   PersonalityProfile,
   RoomieGroup,
   UserProfile,
@@ -31,6 +32,10 @@ import {
   formatINR,
   isListingExpired,
 } from '../utils/compatibility';
+import {
+  inferLivingCirclesFromTraits,
+  sanitizeLivingCircles,
+} from '../utils/livingCircles';
 
 export interface FirestoreMatchRecord {
   matchId: string;
@@ -164,6 +169,25 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
         ? pData.listingDurationDays
         : 14;
 
+    const loadedPersonality = sanitizePersonality(pData.personality);
+    const loadedSkills = Array.isArray(pData.skills) ? pData.skills.map(String) : [];
+    const loadedBudget = String(pData.budget || '₹18,000 / mo');
+    const explicitCircles = sanitizeLivingCircles(pData.livingCircles);
+    const livingCircles =
+      explicitCircles.length > 0
+        ? explicitCircles
+        : inferLivingCirclesFromTraits({
+            profession: String(pData.profession || loadedSkills[0] || ''),
+            skills: loadedSkills,
+            bio: String(pData.bio || ''),
+            budget: loadedBudget,
+            workRoutine: String(pData.workRoutine || ''),
+            noiseTolerance: loadedPersonality.noiseTolerance,
+            vibe: loadedPersonality.vibe,
+            guestPolicy: loadedPersonality.guestPolicy,
+            cleanliness: String(pData.cleanliness || ''),
+          });
+
     return {
       id: uid,
       name: String(pData.name || 'ROOMIE User'),
@@ -172,12 +196,13 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
       gender: (pData.gender as Gender) || 'male',
       preferredFlatmateGender: (pData.preferredFlatmateGender as 'male' | 'female' | 'any') || 'male',
       hasFlat: (pData.hasFlat as FlatStatus) || 'needs_flat',
+      livingCircles,
       flatLocation: {
         city: String(pData.city || 'Bengaluru'),
         area: String(pData.area || 'Koramangala'),
       },
-      budget: String(pData.budget || '₹18,000 / mo'),
-      skills: Array.isArray(pData.skills) ? pData.skills.map(String) : [],
+      budget: loadedBudget,
+      skills: loadedSkills,
       hobbies: Array.isArray(pData.hobbies) ? pData.hobbies.map(String) : [],
       interests: Array.isArray(pData.interests) ? pData.interests.map(String) : [],
       lifestyle: {
@@ -188,7 +213,7 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
         smoking: String(pData.smoking || 'Non-smoker'),
         pets: String(pData.pets || 'Friendly with pets'),
       },
-      personality: sanitizePersonality(pData.personality),
+      personality: loadedPersonality,
       costBreakdown: sanitizeCostBreakdown(pData.costBreakdown, String(pData.budget || '')),
       identityVerification: sanitizeIdentityVerification(pData.identityVerification),
       emergencyContact,
@@ -247,6 +272,23 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     ? clampStr(user.budget, `${formatINR(costBreakdown.monthlyRent)} / mo`, 2, 40)
     : `${formatINR(costBreakdown.monthlyRent)} / mo`;
 
+  const sanitizedCircles = sanitizeLivingCircles(user.livingCircles);
+  const effectiveCircles =
+    sanitizedCircles.length > 0
+      ? sanitizedCircles
+      : inferLivingCirclesFromTraits({
+          profession: user.skills?.[0],
+          skills: user.skills,
+          bio: user.bio,
+          budget: budgetLabel,
+          monthlyRent: costBreakdown.monthlyRent,
+          workRoutine: user.lifestyle?.workRoutine,
+          noiseTolerance: user.personality?.noiseTolerance,
+          vibe: user.personality?.vibe,
+          guestPolicy: user.personality?.guestPolicy,
+          cleanliness: user.lifestyle?.cleanliness,
+        });
+
   const publicPayload = {
     uid,
     name: clampStr(user.name, 'ROOMIE User', 2, 80),
@@ -255,6 +297,7 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     preferredFlatmateGender: user.preferredFlatmateGender || 'male',
     profession: clampStr(user.skills?.[0] || 'Urban Professional', 'Urban Professional', 1, 80),
     hasFlat: user.hasFlat || 'needs_flat',
+    livingCircles: effectiveCircles,
     city: clampStr(user.flatLocation?.city, 'Bengaluru', 2, 60),
     area: clampStr(user.flatLocation?.area, 'Koramangala', 2, 100),
     budget: budgetLabel,
@@ -356,6 +399,26 @@ export async function blockUserInDb(currentUid: string, targetUid: string, curre
 }
 
 /**
+ * Updates the signed-in user's joined Living Circles in Firestore.
+ */
+export async function updateUserLivingCirclesInDb(
+  uid: string,
+  circles: LivingCircleId[]
+): Promise<LivingCircleId[]> {
+  const sanitized = sanitizeLivingCircles(circles);
+  const profileRef = doc(db, 'profiles', uid);
+  try {
+    await updateDoc(profileRef, {
+      livingCircles: sanitized,
+      updatedAt: serverTimestamp(),
+    });
+    return sanitized;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `profiles/${uid}`);
+  }
+}
+
+/**
  * Files an immutable safety report on a suspicious or abusive profile.
  */
 export async function submitSafetyReport(
@@ -400,6 +463,25 @@ export function subscribeToCommunityProfiles(
         const durationDays: 7 | 14 | 30 =
           d.listingDurationDays === 7 || d.listingDurationDays === 30 ? d.listingDurationDays : 14;
 
+        const explicitCircles = sanitizeLivingCircles(d.livingCircles);
+        const skillsList = Array.isArray(d.skills) ? d.skills.map(String) : [];
+        const budgetText = String(d.budget || '₹18,000 / mo');
+        const livingCircles =
+          explicitCircles.length > 0
+            ? explicitCircles
+            : inferLivingCirclesFromTraits({
+                profession: String(d.profession || skillsList[0] || ''),
+                skills: skillsList,
+                bio: String(d.bio || ''),
+                budget: budgetText,
+                monthlyRent: costBreakdown.monthlyRent,
+                workRoutine: String(d.workRoutine || ''),
+                noiseTolerance: personality.noiseTolerance,
+                vibe: personality.vibe,
+                guestPolicy: personality.guestPolicy,
+                cleanliness: String(d.cleanliness || ''),
+              });
+
         return {
           id: docSnap.id,
           name: String(d.name || 'Flatmate'),
@@ -407,12 +489,13 @@ export function subscribeToCommunityProfiles(
           gender: (d.gender as Gender) || 'male',
           profession: String(d.profession || 'Urban Professional'),
           hasFlat: (d.hasFlat as FlatStatus) || 'needs_flat',
+          livingCircles,
           city: String(d.city || 'Bengaluru'),
           area: String(d.area || 'Koramangala'),
-          budget: String(d.budget || '₹18,000 / mo'),
+          budget: budgetText,
           photos: Array.isArray(d.photos) ? d.photos.map(String) : [],
           flatPhotos: Array.isArray(d.flatPhotos) ? d.flatPhotos.map(String) : [],
-          skills: Array.isArray(d.skills) ? d.skills.map(String) : [],
+          skills: skillsList,
           hobbies: Array.isArray(d.hobbies) ? d.hobbies.map(String) : [],
           interests: Array.isArray(d.interests) ? d.interests.map(String) : [],
           bio: String(d.bio || ''),

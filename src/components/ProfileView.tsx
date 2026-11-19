@@ -1,10 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  User, 
   Mail, 
   Phone, 
-  Sparkles, 
-  Heart, 
   Moon, 
   Utensils, 
   CheckCircle2, 
@@ -25,6 +22,7 @@ import {
 import {
   UserProfile,
   FlatStatus,
+  LivingCircleId,
   PersonalityProfile,
   CostBreakdown,
   IdentityVerificationInfo,
@@ -40,6 +38,11 @@ import {
   getListingExpiryStatus,
 } from '../utils/compatibility';
 import { computeExpiryIso } from '../services/roomieDb';
+import {
+  LIVING_CIRCLES,
+  getEffectiveLivingCircles,
+  getLivingCircleMeta,
+} from '../utils/livingCircles';
 
 interface ProfileViewProps {
   currentUser: UserProfile;
@@ -55,6 +58,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
   const [editedArea, setEditedArea] = useState(currentUser.flatLocation.area);
   const [editedCity, setEditedCity] = useState(currentUser.flatLocation.city);
   const [editedHasFlat, setEditedHasFlat] = useState<FlatStatus>(currentUser.hasFlat);
+  const [editedCircles, setEditedCircles] = useState<LivingCircleId[]>(
+    getEffectiveLivingCircles(currentUser)
+  );
   const [editedPhotos, setEditedPhotos] = useState<string[]>(currentUser.photos || []);
   const [editedFlatPhotos, setEditedFlatPhotos] = useState<string[]>(currentUser.flatPhotos || []);
   const [editedPersonality, setEditedPersonality] = useState<PersonalityProfile>(
@@ -80,6 +86,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
     setEditedArea(u.flatLocation.area);
     setEditedCity(u.flatLocation.city);
     setEditedHasFlat(u.hasFlat);
+    setEditedCircles(getEffectiveLivingCircles(u));
     setEditedPhotos(u.photos || []);
     setEditedFlatPhotos(u.flatPhotos || []);
     setEditedPersonality(u.personality || { ...DEFAULT_PERSONALITY });
@@ -129,6 +136,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
       ...currentUser,
       bio: editedBio.trim() || currentUser.bio,
       hasFlat: editedHasFlat,
+      livingCircles: editedCircles.length > 0 ? editedCircles : getEffectiveLivingCircles(currentUser),
       flatLocation: {
         city: editedCity.trim() || currentUser.flatLocation.city,
         area: editedArea.trim() || currentUser.flatLocation.area,
@@ -230,9 +238,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
       <div className="bg-[#303030] border border-[#444444] rounded-3xl shadow-xl overflow-hidden">
         
         {/* Banner with Profile Photo & Flat Status */}
-        <div className="p-6 sm:p-8 border-b border-[#3d3d3d] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-[#282828] to-[#343434]">
+        <div className="p-6 border-b border-[#3d3d3d] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-[#2c2c2c]">
           <div className="flex items-center gap-4">
-            <div className="relative w-20 h-20 rounded-2xl overflow-hidden border-2 border-[#FFD43B] shrink-0 bg-[#242424] shadow-md flex items-center justify-center">
+            <div className="relative w-18 h-18 rounded-2xl overflow-hidden border-2 border-[#FFD43B] shrink-0 bg-[#242424] flex items-center justify-center">
               {currentUser.photos && currentUser.photos[0] ? (
                 <img
                   src={currentUser.photos[0]}
@@ -246,36 +254,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
               )}
             </div>
             <div>
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <h2 className="text-2xl font-bold text-[#F5F5F5]">{currentUser.name}</h2>
-                <span className="text-xs bg-[#FFD43B] text-[#242424] font-extrabold px-2 py-0.5 rounded-full">
-                  {currentUser.gender === 'male' ? '👦 Boy' : '👧 Girl'}
-                </span>
-                {currentUser.identityVerification?.identityVerified ? (
-                  <span className="text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>ID Verified</span>
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-semibold bg-[#242424] text-[#B8B8B8] border border-[#444444] px-2.5 py-0.5 rounded-full">
-                    Google Verified
-                  </span>
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-xl sm:text-2xl font-bold text-[#F5F5F5]">{currentUser.name}</h2>
+                {currentUser.identityVerification?.identityVerified && (
+                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 )}
               </div>
 
-              {/* Has Flat Yes/No Tag */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs text-[#B8B8B8]">
                 {currentUser.hasFlat === 'has_flat' ? (
-                  <span className="text-xs font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                    <Home className="w-3.5 h-3.5" />
-                    <span>Has Flat in {currentUser.flatLocation.area}</span>
-                  </span>
+                  <Home className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 ) : (
-                  <span className="text-xs font-bold text-amber-400 bg-amber-950/40 border border-amber-800 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                    <Search className="w-3.5 h-3.5" />
-                    <span>Looking for Flat in {currentUser.flatLocation.area}</span>
-                  </span>
+                  <Search className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 )}
+                <span>
+                  {currentUser.hasFlat === 'has_flat' ? 'Has Flat' : 'Needs Flat'} · {currentUser.flatLocation.area}, {currentUser.flatLocation.city}
+                </span>
               </div>
             </div>
           </div>
@@ -292,7 +286,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-[#383838] hover:bg-[#444444] text-[#F5F5F5] border border-[#484848] transition-colors cursor-pointer"
           >
             {isEditing ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5 text-[#FFD43B]" />}
-            <span>{isEditing ? 'Cancel' : 'Edit Flat & Habits'}</span>
+            <span>{isEditing ? 'Cancel' : 'Edit Profile'}</span>
           </button>
         </div>
 
@@ -385,6 +379,45 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   disabled={isSaving}
                 />
               )}
+
+              {/* Living Circles Membership Editor */}
+              <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
+                  Your Living Circles
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {LIVING_CIRCLES.map((circle) => {
+                    const active = editedCircles.includes(circle.id);
+                    return (
+                      <button
+                        key={circle.id}
+                        type="button"
+                        onClick={() => {
+                          setEditedCircles((prev) => {
+                            if (active && prev.length <= 1) return prev;
+                            return active
+                              ? prev.filter((id) => id !== circle.id)
+                              : [...prev, circle.id];
+                          });
+                        }}
+                        className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                          active
+                            ? 'bg-[#353535] border-[#FFD43B] text-[#F5F5F5]'
+                            : 'bg-[#1f1f1f] border-[#3a3a3a] text-[#B8B8B8]'
+                        }`}
+                      >
+                        <span className="text-xs font-bold flex items-center gap-2">
+                          <span>{circle.emoji}</span>
+                          <span>{circle.name}</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-[#FFD43B]">
+                          {active ? 'Joined ✓' : 'Join'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* Location of Flat */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -609,34 +642,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
             </form>
           ) : (
             <>
-              {/* Account Credentials */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="bg-[#242424] p-3 rounded-xl border border-[#3d3d3d] flex items-center gap-2.5">
-                  <User className="w-4 h-4 text-[#8e8e8e] shrink-0" />
-                  <div className="truncate">
-                    <span className="text-[10px] text-[#8e8e8e] block">Full Name</span>
-                    <span className="text-[#F5F5F5] font-semibold truncate block">{currentUser.name}</span>
-                  </div>
-                </div>
-
+              {/* Contact */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="bg-[#242424] p-3 rounded-xl border border-[#3d3d3d] flex items-center gap-2.5">
                   <Mail className="w-4 h-4 text-[#8e8e8e] shrink-0" />
-                  <div className="truncate">
-                    <span className="text-[10px] text-[#8e8e8e] block">Email</span>
-                    <span className="text-[#F5F5F5] font-semibold truncate block">{currentUser.email}</span>
-                  </div>
+                  <span className="text-[#F5F5F5] font-medium truncate">{currentUser.email}</span>
                 </div>
 
                 <div className="bg-[#242424] p-3 rounded-xl border border-[#3d3d3d] flex items-center gap-2.5">
                   <Phone className="w-4 h-4 text-[#8e8e8e] shrink-0" />
-                  <div className="truncate">
-                    <span className="text-[10px] text-[#8e8e8e] block">Phone</span>
-                    <span className="text-[#F5F5F5] font-semibold truncate block">{currentUser.phone}</span>
-                  </div>
+                  <span className="text-[#F5F5F5] font-medium truncate">{currentUser.phone}</span>
                 </div>
               </div>
 
-              {/* SHARE REAL FLAT PHOTOS SECTION (for users who have a flat) */}
               {currentUser.hasFlat === 'has_flat' && (
                 <div className="space-y-2">
                   <FlatPhotoUploader
@@ -652,54 +670,41 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 </div>
               )}
 
-              {/* SKILLS */}
+              {/* Living Circles */}
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Your Skills (Showcased on Card)</span>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2">
+                  Living Circles
                 </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {currentUser.skills.map((skill) => (
-                    <span
-                      key={skill}
-                      className="text-xs font-medium px-2.5 py-1 rounded-lg bg-[#383838] border border-[#484848] text-[#F5F5F5]"
-                    >
-                      {skill}
-                    </span>
-                  ))}
+                <div className="flex flex-wrap gap-2">
+                  {getEffectiveLivingCircles(currentUser).map((cid) => {
+                    const meta = getLivingCircleMeta(cid);
+                    return (
+                      <span
+                        key={cid}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#242424] border border-[#3d3d3d] text-[#F5F5F5] inline-flex items-center gap-1.5"
+                      >
+                        <span>{meta.emoji}</span>
+                        <span>{meta.name}</span>
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* HOBBIES & INTERESTS */}
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#B8B8B8] mb-2 flex items-center gap-1.5">
-                  <Heart className="w-3.5 h-3.5 text-[#FFD43B]" />
-                  <span>Hobbies &amp; Interests</span>
+              {/* About & Habits */}
+              <div className="pt-2 border-t border-[#383838] space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B]">
+                  About &amp; Habits
                 </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {currentUser.hobbies.map((h) => (
-                    <span key={h} className="text-xs px-2.5 py-0.5 rounded-lg bg-[#242424] text-[#B8B8B8] border border-[#3d3d3d]">
-                      {h}
-                    </span>
-                  ))}
-                  {currentUser.interests.map((i) => (
-                    <span key={i} className="text-xs px-2.5 py-0.5 rounded-lg bg-[#242424] text-[#B8B8B8] border border-[#3d3d3d]">
-                      {i}
-                    </span>
-                  ))}
-                </div>
-              </div>
+                <p className="text-xs text-[#D0D0D0] leading-relaxed">
+                  {currentUser.bio}
+                </p>
 
-              {/* LIFESTYLE */}
-              <div className="pt-2 border-t border-[#383838]">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-3">
-                  Everyday Living Habits
-                </h3>
-                <div className="grid grid-cols-2 gap-3 text-xs mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <div className="bg-[#242424] p-3 rounded-xl border border-[#3d3d3d] flex items-center gap-2">
                     <Moon className="w-4 h-4 text-[#FFD43B] shrink-0" />
                     <div>
-                      <span className="text-[10px] text-[#8e8e8e] block">Sleep Clock</span>
+                      <span className="text-[10px] text-[#8e8e8e] block">Sleep</span>
                       <span className="text-[#F5F5F5] font-semibold">{currentUser.lifestyle.sleepSchedule}</span>
                     </div>
                   </div>
@@ -707,27 +712,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                   <div className="bg-[#242424] p-3 rounded-xl border border-[#3d3d3d] flex items-center gap-2">
                     <Utensils className="w-4 h-4 text-[#FFD43B] shrink-0" />
                     <div>
-                      <span className="text-[10px] text-[#8e8e8e] block">Food &amp; Kitchen</span>
+                      <span className="text-[10px] text-[#8e8e8e] block">Diet</span>
                       <span className="text-[#F5F5F5] font-semibold">{currentUser.lifestyle.kitchenDiet}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-[#242424] p-3.5 rounded-xl border border-[#3d3d3d]">
-                  <span className="text-[10px] uppercase font-bold text-[#FFD43B] block mb-1">
-                    Your Living Bio
-                  </span>
-                  <p className="text-xs text-[#B8B8B8] italic leading-relaxed">
-                    &ldquo;{currentUser.bio}&rdquo;
+                {currentUser.skills.length > 0 && (
+                  <p className="text-xs text-[#B8B8B8]">
+                    <span className="text-[#8e8e8e]">Profession / Skills: </span>
+                    <span className="text-[#F5F5F5]">{currentUser.skills.join(' · ')}</span>
                   </p>
-                </div>
+                )}
               </div>
 
-              {/* PERSONALITY MATCHING TRAITS */}
+              {/* Preferences */}
               <div className="pt-2 border-t border-[#383838]">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-2.5 flex items-center gap-1.5">
                   <BrainCircuit className="w-4 h-4" />
-                  <span>Personality Matching Profile</span>
+                  <span>Living Preferences</span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
                   <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
@@ -743,13 +746,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                     </span>
                   </div>
                   <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
-                    <span className="text-[10px] text-[#8e8e8e] block">Noise Preference</span>
+                    <span className="text-[10px] text-[#8e8e8e] block">Noise</span>
                     <span className="text-[#F5F5F5] font-semibold">
                       {(currentUser.personality || DEFAULT_PERSONALITY).noiseTolerance}
                     </span>
                   </div>
                   <div className="bg-[#242424] p-2.5 rounded-xl border border-[#3d3d3d]">
-                    <span className="text-[10px] text-[#8e8e8e] block">Chore Style</span>
+                    <span className="text-[10px] text-[#8e8e8e] block">Chores</span>
                     <span className="text-[#F5F5F5] font-semibold">
                       {(currentUser.personality || DEFAULT_PERSONALITY).choreStyle}
                     </span>
@@ -757,31 +760,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                 </div>
               </div>
 
-              {/* COMPLETE COST BREAKDOWN */}
               <CostBreakdownCard
                 costBreakdown={currentUser.costBreakdown}
                 fallbackBudget={currentUser.budget}
                 hasFlat={currentUser.hasFlat}
               />
 
-              {/* AUTOMATIC LISTING EXPIRY */}
+              {/* Listing Status */}
               <div
-                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
                   expiryStatus.expired
                     ? 'bg-red-950/30 border-red-700'
                     : expiryStatus.expiringSoon
                     ? 'bg-amber-950/30 border-amber-700'
-                    : 'bg-[#242424] border-[#444444]'
+                    : 'bg-[#242424] border-[#3d3d3d]'
                 }`}
               >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#F5F5F5]">
-                    <Clock className={`w-4 h-4 ${expiryStatus.expired ? 'text-red-400' : 'text-[#FFD43B]'}`} />
-                    <span>Automatic Listing Expiry · {expiryStatus.label}</span>
-                  </div>
-                  <p className="text-[11px] text-[#B8B8B8]">
-                    Stale listings automatically hide after {currentUser.listingDurationDays || 14} days so matches stay active and real.
-                  </p>
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#F5F5F5]">
+                  <Clock className={`w-4 h-4 ${expiryStatus.expired ? 'text-red-400' : 'text-[#FFD43B]'}`} />
+                  <span>Listing · {expiryStatus.label}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button

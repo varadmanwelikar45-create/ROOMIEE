@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Star, MessageSquare, User, LogOut, Home, Search, Mail, Users, ShieldCheck } from 'lucide-react';
+import { Compass, Star, MessageSquare, User, LogOut, Home, Search, Mail, Users, ShieldCheck } from 'lucide-react';
 import { UserProfile } from '../types';
 
 export type AppTab = 'discover' | 'top_picks' | 'groups' | 'matches' | 'gmail' | 'profile';
@@ -23,153 +23,134 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 }) => {
   return (
     <header className="sticky top-0 z-40 w-full bg-[#242424]/95 backdrop-blur-md border-b border-[#383838]">
-      <div className="max-w-md sm:max-w-xl mx-auto px-4">
+      <div className="max-w-md sm:max-w-2xl lg:max-w-6xl mx-auto px-4">
         
-        {/* Top Strip: Brand & User Flat Status */}
+        {/* Top Strip: Brand & Flat Location */}
         <div className="flex items-center justify-between pt-3 pb-2 border-b border-[#333333]">
-          
-          {/* ROOMIE Logo */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <span className="text-xl font-extrabold tracking-tight text-[#F5F5F5]">
               ROOMIE<span className="text-[#FFD43B]">.</span>
             </span>
-            <span className="text-[10px] text-[#FFD43B] bg-[#303030] px-2 py-0.5 rounded-full font-bold border border-[#444444]">
-              {currentUser.gender === 'male' ? '👦 Boy' : currentUser.gender === 'female' ? '👧 Girl' : '👤 Roomie'}
-            </span>
             {currentUser.identityVerification?.identityVerified && (
-              <span
-                className="text-[10px] text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded-full border border-emerald-500/40 inline-flex items-center gap-0.5 font-bold"
-                title="AI + ID Verified Account"
-              >
-                <ShieldCheck className="w-3 h-3" />
-                <span className="hidden sm:inline">ID Verified</span>
-              </span>
+              <ShieldCheck
+                className="w-4 h-4 text-emerald-400"
+                aria-label="Verified Account"
+              />
             )}
           </div>
 
-          {/* Current Flat Status Badge */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-[11px] text-[#B8B8B8] bg-[#303030] px-2.5 py-1 rounded-full border border-[#444444] max-w-[190px] truncate">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-[#B8B8B8] max-w-[200px] truncate">
               {currentUser.hasFlat === 'has_flat' ? (
-                <Home className="w-3 h-3 text-emerald-400 shrink-0" />
+                <Home className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               ) : (
-                <Search className="w-3 h-3 text-amber-400 shrink-0" />
+                <Search className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               )}
               <span className="truncate">
-                {currentUser.hasFlat === 'has_flat' ? 'Has Flat: ' : 'Needs Flat: '}
                 <span className="text-[#F5F5F5] font-semibold">{currentUser.flatLocation.area}</span>
               </span>
             </div>
 
             <button
               onClick={onSignOut}
-              className="p-1.5 rounded-lg text-[#8e8e8e] hover:text-red-400 hover:bg-[#303030] transition-colors cursor-pointer"
+              className="p-2 rounded-xl text-[#8e8e8e] hover:text-red-400 hover:bg-[#303030] transition-colors cursor-pointer"
               title="Sign Out"
               aria-label="Sign Out"
             >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
-
         </div>
 
-        {/* Tinder-Style Icon Navigation Bar */}
+        {/* Navigation Bar */}
         <div className="flex items-center justify-around py-2">
-          
-          {/* 1. FLAME (Discover Cards) */}
           <button
             onClick={() => onTabChange('discover')}
-            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer ${
               currentTab === 'discover'
-                ? 'text-[#FFD43B] bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
-            title="Discover Flatmates (Cards)"
+            title="Living Circles"
           >
-            <Flame className="w-6 h-6 stroke-[2.2] fill-current" />
-            <span className="text-[10px] font-bold">Discover</span>
+            <Compass className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">Circles</span>
           </button>
 
-          {/* 2. STAR (Top Roomie Picks) */}
           <button
             onClick={() => onTabChange('top_picks')}
-            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer ${
               currentTab === 'top_picks'
-                ? 'text-sky-400 bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
-            title="Top Roomie Picks"
+            title="Top Picks"
           >
-            <Star className="w-5 h-5 stroke-[2.2] fill-current" />
+            <Star className="w-5 h-5 stroke-[2.2]" />
             <span className="text-[10px] font-bold">Top Picks</span>
           </button>
 
-          {/* 3. GROUPS (Connected Duos Seeking +1) */}
           <button
             onClick={() => onTabChange('groups')}
-            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer relative ${
               currentTab === 'groups'
-                ? 'text-emerald-400 bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
-            title="Duo Groups Seeking +1 Flatmate"
+            title="Duo Groups"
           >
             <Users className="w-5 h-5 stroke-[2.2]" />
             <span className="text-[10px] font-bold">Groups</span>
             {groupsCount > 0 && (
-              <span className="absolute top-0.5 right-1 text-[9px] font-bold bg-emerald-400 text-[#1c1c1c] px-1.5 py-0.5 rounded-full shadow leading-none">
+              <span className="absolute top-1 right-1.5 text-[9px] font-bold bg-emerald-400 text-[#1c1c1c] px-1.5 py-0.5 rounded-full leading-none">
                 {groupsCount}
               </span>
             )}
           </button>
 
-          {/* 4. CHAT (Matches & Conversations) */}
           <button
             onClick={() => onTabChange('matches')}
-            className={`p-2 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer relative ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer relative ${
               currentTab === 'matches'
-                ? 'text-emerald-400 bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
             title="Matches & Messages"
           >
-            <MessageSquare className="w-5 h-5 stroke-[2.2] fill-current" />
+            <MessageSquare className="w-5 h-5 stroke-[2.2]" />
             <span className="text-[10px] font-bold">Matches</span>
             {matchesCount > 0 && (
-              <span className="absolute top-0.5 right-1 text-[9px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.5 rounded-full shadow leading-none">
+              <span className="absolute top-1 right-1.5 text-[9px] font-bold bg-[#FFD43B] text-[#242424] px-1.5 py-0.5 rounded-full leading-none">
                 {matchesCount}
               </span>
             )}
           </button>
 
-          {/* 4. GMAIL (Flatmate Outreach & Inbox) */}
           <button
             onClick={() => onTabChange('gmail')}
-            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer ${
               currentTab === 'gmail'
-                ? 'text-[#FFD43B] bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
-            title="Gmail Inbox & Outreach"
+            title="Gmail"
           >
-            <Mail className="w-6 h-6 stroke-[2.2]" />
+            <Mail className="w-5 h-5 stroke-[2.2]" />
             <span className="text-[10px] font-bold">Gmail</span>
           </button>
 
-          {/* 5. PROFILE (My Profile & Settings) */}
           <button
             onClick={() => onTabChange('profile')}
-            className={`p-2.5 rounded-2xl transition-all flex flex-col items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 rounded-xl transition-colors flex flex-col items-center gap-1 cursor-pointer ${
               currentTab === 'profile'
-                ? 'text-[#F5F5F5] bg-[#303030] shadow-md scale-105'
+                ? 'text-[#FFD43B] bg-[#303030]'
                 : 'text-[#8e8e8e] hover:text-[#F5F5F5]'
             }`}
-            title="My Profile"
+            title="Profile"
           >
-            <User className="w-6 h-6 stroke-[2.2]" />
+            <User className="w-5 h-5 stroke-[2.2]" />
             <span className="text-[10px] font-bold">Profile</span>
           </button>
-
         </div>
 
       </div>

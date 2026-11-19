@@ -30,31 +30,38 @@ export async function verifyIdentityProof(
 
   const { base64, mimeType } = await prepareFlatPhotoForAiCheck(file);
 
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 28000);
-
-  let response: Response;
-  try {
-    response = await fetch('/api/verify-identity', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageBase64: base64,
-        mimeType,
-        verificationType,
-      }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Identity verification timed out. Please try again in a few seconds.');
+  const requestVerify = async (): Promise<{ response: Response; rawBody: string }> => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 48000);
+    try {
+      const response = await fetch('/api/verify-identity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType,
+          verificationType,
+        }),
+        signal: controller.signal,
+      });
+      const rawBody = await response.text();
+      return { response, rawBody };
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new Error('Identity verification timed out. Please try again in a few seconds.');
+      }
+      throw new Error('Network error contacting the identity verification server. Please try again.');
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-    throw new Error('Network error contacting the identity verification server. Please try again.');
-  } finally {
-    window.clearTimeout(timeoutId);
+  };
+
+  let { response, rawBody } = await requestVerify();
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    ({ response, rawBody } = await requestVerify());
   }
 
-  const rawBody = await response.text();
   let payload: (Partial<IdentityCheckResponse> & { error?: string }) = {};
   try {
     payload = rawBody ? (JSON.parse(rawBody) as Partial<IdentityCheckResponse> & { error?: string }) : {};

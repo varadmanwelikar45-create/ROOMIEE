@@ -1,4 +1,5 @@
 import { CostBreakdown, FlatmateCandidate, PersonalityProfile, RoomieGroup, UserProfile } from '../types';
+import { getEffectiveLivingCircles, getLivingCircleMeta } from './livingCircles';
 
 export const DEFAULT_PERSONALITY: PersonalityProfile = {
   vibe: 'Ambivert · Balanced Social',
@@ -86,7 +87,7 @@ export function getListingExpiryStatus(expiresAt?: string): {
   }
   const diff = ms - Date.now();
   if (diff <= 0) {
-    return { expired: true, daysLeft: 0, hoursLeft: 0, label: 'Expired · Hidden from deck', expiringSoon: true };
+    return { expired: true, daysLeft: 0, hoursLeft: 0, label: 'Expired · Hidden from circles', expiringSoon: true };
   }
   const hoursLeft = Math.ceil(diff / (1000 * 60 * 60));
   const daysLeft = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -109,7 +110,7 @@ export function getListingExpiryStatus(expiresAt?: string): {
 }
 
 /**
- * Computes deterministic personality + lifestyle + location + budget compatibility (60-99%)
+ * Computes deterministic personality + lifestyle + location + budget + living circle compatibility (60-99%)
  * plus concrete human-readable reasons explaining WHY two flatmates match.
  */
 export function computeCompatibility(
@@ -120,8 +121,18 @@ export function computeCompatibility(
     return { score: 88, reasons: ['Verified ROOMIE Profile'] };
   }
 
-  let score = 58;
+  let score = 56;
   const reasons: string[] = [];
+
+  // 0. Shared Living Circles boost
+  const myCircles = getEffectiveLivingCircles(currentUser);
+  const candCircles = getEffectiveLivingCircles(candidate);
+  const sharedCircles = candCircles.filter((c) => myCircles.includes(c));
+  if (sharedCircles.length > 0) {
+    score += Math.min(8, sharedCircles.length * 4);
+    const firstCircle = getLivingCircleMeta(sharedCircles[0]);
+    reasons.push(`${firstCircle.emoji} ${firstCircle.name} circle`);
+  }
 
   // 1. Complementary flat status (+10 if one has flat & one needs flat)
   if (currentUser.hasFlat !== candidate.hasFlat) {

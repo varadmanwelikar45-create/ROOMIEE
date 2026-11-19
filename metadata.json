@@ -1,6 +1,6 @@
 {
   "name": "ROOMIE - Flatmate Lifestyle Compatibility Platform",
   "description": "Don't just find a room. Find your kind of people. Discover compatible flatmates across India based on lifestyle, habits, routines, and expectations.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

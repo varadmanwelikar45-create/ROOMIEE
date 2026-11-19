@@ -43,6 +43,10 @@
           "enum": ["has_flat", "needs_flat"],
           "description": "Whether the user already has a flat or is looking for one."
         },
+        "livingCircles": {
+          "type": "array",
+          "description": "Up to 4 Living Circles joined by the user (college_students, it_professionals, budget_living, peaceful_living)."
+        },
         "city": {
           "type": "string",
           "minLength": 2,

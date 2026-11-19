@@ -61,7 +61,7 @@ export async function verifyAndCompressFlatPhoto(file: File): Promise<FlatPhotoV
   const { base64, mimeType } = await prepareFlatPhotoForAiCheck(file);
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 28000);
+  const timeoutId = window.setTimeout(() => controller.abort(), 48000);
 
   let response: Response;
   try {

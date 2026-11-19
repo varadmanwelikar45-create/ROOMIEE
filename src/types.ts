@@ -1,5 +1,10 @@
 export type Gender = 'male' | 'female' | 'other';
 export type FlatStatus = 'has_flat' | 'needs_flat';
+export type LivingCircleId =
+  | 'college_students'
+  | 'it_professionals'
+  | 'budget_living'
+  | 'peaceful_living';
 
 export type VerificationMethod =
   | 'google_only'
@@ -38,6 +43,7 @@ export interface UserProfile {
   gender: Gender;
   preferredFlatmateGender: 'male' | 'female' | 'any';
   hasFlat: FlatStatus; // 'has_flat' (Yes) or 'needs_flat' (No)
+  livingCircles?: LivingCircleId[];
   flatLocation: {
     city: string; // e.g. "Bengaluru"
     area: string; // e.g. "Koramangala 4th Block"
@@ -75,6 +81,7 @@ export interface FlatmateCandidate {
   gender: Gender;
   profession: string;
   hasFlat: FlatStatus; // 'has_flat' or 'needs_flat'
+  livingCircles?: LivingCircleId[];
   city: string;
   area: string;
   budget: string;

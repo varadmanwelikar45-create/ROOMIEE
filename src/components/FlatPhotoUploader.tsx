@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Home,
   Upload,
-  ShieldCheck,
   ShieldAlert,
   Loader2,
   X,
@@ -80,21 +79,15 @@ export const FlatPhotoUploader: React.FC<FlatPhotoUploaderProps> = ({
   };
 
   return (
-    <div className={compact ? 'space-y-3' : 'bg-[#242424] p-4 rounded-2xl border border-[#444444] space-y-3'}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
-            <Home className="w-4 h-4 text-[#FFD43B]" />
-            <span>Share Real Flat Photos ({flatPhotos.length}/{maxPhotos})</span>
-          </label>
-          <p className="text-[11px] text-[#B8B8B8] mt-1">
-            Show your actual bedroom, living room, kitchen, or balcony. Every photo is scanned with AI detection — AI-generated or CGI renders are automatically blocked.
-          </p>
-        </div>
-        <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/35">
-          <ShieldCheck className="w-3 h-3" />
-          <span>AI Guard On</span>
-        </span>
+    <div className={compact ? 'space-y-3' : 'bg-[#242424] p-4 rounded-2xl border border-[#3d3d3d] space-y-3'}>
+      <div>
+        <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
+          <Home className="w-4 h-4 text-[#FFD43B]" />
+          <span>Flat Photos ({flatPhotos.length}/{maxPhotos})</span>
+        </label>
+        <p className="text-[11px] text-[#B8B8B8] mt-0.5">
+          Add real photos of your room, living area, or balcony.
+        </p>
       </div>
 
       {/* Uploaded Flat Photos Grid */}
@@ -103,19 +96,13 @@ export const FlatPhotoUploader: React.FC<FlatPhotoUploaderProps> = ({
           {flatPhotos.map((src, idx) => (
             <div
               key={`${idx}-${src.slice(-16)}`}
-              className="relative aspect-[4/3] rounded-xl overflow-hidden border border-emerald-500/60 bg-[#1e1e1e] group shadow-md"
+              className="relative aspect-[4/3] rounded-xl overflow-hidden border border-[#484848] bg-[#1e1e1e] group shadow-md"
             >
               <img
                 src={src}
-                alt={`Verified flat photo ${idx + 1}`}
+                alt={`Flat photo ${idx + 1}`}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span className="text-[10px] font-semibold text-emerald-300 truncate">
-                  Real Flat
-                </span>
-              </div>
               <button
                 type="button"
                 disabled={isScanning || disabled}

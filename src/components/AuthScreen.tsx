@@ -21,12 +21,13 @@ import {
   BrainCircuit,
   ShieldAlert,
 } from 'lucide-react';
-import { UserProfile, Gender, FlatStatus, PersonalityProfile } from '../types';
+import { UserProfile, Gender, FlatStatus, PersonalityProfile, LivingCircleId } from '../types';
 import { verifyAndCompressProfilePhoto } from '../services/profilePhotoVerifier';
 import { auth, googleProvider } from '../firebase';
 import { computeExpiryIso, loadUserProfileFromDb, saveUserProfileToDb } from '../services/roomieDb';
 import { FlatPhotoUploader } from './FlatPhotoUploader';
 import { DEFAULT_PERSONALITY, formatINR, parseBudgetMonthly } from '../utils/compatibility';
+import { LIVING_CIRCLES } from '../utils/livingCircles';
 
 interface AuthScreenProps {
   firebaseUser: FirebaseUser | null;
@@ -62,7 +63,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [submitError, setSubmitError] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  // Skills, Hobbies, Interests
+  // Skills, Hobbies, Interests & Living Circles
+  const [selectedCircles, setSelectedCircles] = useState<LivingCircleId[]>([
+    'it_professionals',
+    'peaceful_living',
+  ]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>(['Frontend Engineer', 'UI/UX Designer']);
   const [customSkill, setCustomSkill] = useState('');
   const defaultHobbies = ['Weekend Treks', 'Specialty Coffee', 'Gym'];
@@ -285,6 +290,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       gender,
       preferredFlatmateGender,
       hasFlat,
+      livingCircles: selectedCircles.length > 0 ? selectedCircles : ['it_professionals'],
       flatLocation: {
         city,
         area: area.trim(),
@@ -408,11 +414,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                       <span>🔍 No, looking for flat</span>
                     </button>
                   </div>
-                  <p className="text-[11px] text-[#8e8e8e] mt-2">
-                    {hasFlat === 'has_flat'
-                      ? 'You have a room/flat and are seeking a compatible flatmate to move in.'
-                      : 'You are searching for a room or looking to team up to rent a new flat together.'}
-                  </p>
                 </div>
 
                 {/* 2. FLAT LOCATION & CITY */}
@@ -514,7 +515,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     </>
                   ) : (
                     <>
-                      <span>Continue with Google &amp; Start Swapping</span>
+                      <span>Continue with Google &amp; Join Living Circles</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -841,9 +842,52 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 </form>
               )}
 
-              {/* STEP 2: Skills, Hobbies, Lifestyle */}
+              {/* STEP 2: Living Circles, Skills, Hobbies, Lifestyle */}
               {registerStep === 2 && (
                 <form onSubmit={handleFinalRegister} className="space-y-4">
+                  {/* LIVING CIRCLES */}
+                  <div className="bg-[#242424] p-3.5 rounded-2xl border border-[#444444]">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-1">
+                      Join Your Living Circles
+                    </label>
+                    <p className="text-[11px] text-[#B8B8B8] mb-2.5">
+                      Pick circles matching your lifestyle &amp; accommodation requirements (no swiping needed):
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {LIVING_CIRCLES.map((circle) => {
+                        const active = selectedCircles.includes(circle.id);
+                        return (
+                          <button
+                            key={circle.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCircles((prev) => {
+                                if (active && prev.length <= 1) return prev;
+                                return active
+                                  ? prev.filter((id) => id !== circle.id)
+                                  : [...prev, circle.id];
+                              });
+                            }}
+                            className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2 ${
+                              active
+                                ? 'bg-[#353535] border-[#FFD43B] text-[#F5F5F5]'
+                                : 'bg-[#1f1f1f] border-[#3a3a3a] text-[#B8B8B8] hover:border-[#555555]'
+                            }`}
+                          >
+                            <span className="text-base leading-none mt-0.5">{circle.emoji}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-xs font-bold truncate">{circle.name}</span>
+                                {active && <span className="text-[10px] font-bold text-[#FFD43B]">Joined</span>}
+                              </div>
+                              <p className="text-[10px] text-[#8e8e8e] truncate">{circle.requirementCue}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* SKILLS */}
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-[#FFD43B] mb-1">
@@ -1161,12 +1205,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               )}
             </div>
           )}
-        </div>
-
-        {/* Real Person Registry indicator */}
-        <div className="mt-4 text-center text-xs text-[#8e8e8e] flex items-center justify-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-[#FFD43B]" />
-          <span>Real-time verified flatmate discovery synced across devices</span>
         </div>
       </div>
     </div>

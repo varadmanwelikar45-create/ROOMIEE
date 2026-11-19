@@ -317,63 +317,51 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
 
         {/* Collapsible Safety Bar */}
         {showSafetyBar && (
-          <div className="px-4 py-3 bg-[#232323] border-b border-[#3d3d3d] text-xs space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-emerald-300 inline-flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4" />
-                <span>
-                  {candidate.identityVerification?.identityVerified
-                    ? 'AI + ID Verified Profile'
-                    : 'Google Verified · Ask for a video tour before transferring deposit'}
-                </span>
+          <div className="px-4 py-2.5 bg-[#232323] border-b border-[#3d3d3d] text-xs flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-[#B8B8B8] inline-flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span>
+                {candidate.identityVerification?.identityVerified
+                  ? 'ID Verified Profile'
+                  : 'Inspect the flat in person or via video call before paying deposit'}
               </span>
-              <div className="flex items-center gap-3">
-                {onReportCandidate && (
-                  <button
-                    type="button"
-                    onClick={() => onReportCandidate(candidate)}
-                    className="text-amber-300 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Flag className="w-3.5 h-3.5" />
-                    <span>Report</span>
-                  </button>
-                )}
-                {onBlockCandidate && (
-                  <button
-                    type="button"
-                    onClick={() => onBlockCandidate(candidate)}
-                    className="text-red-400 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Ban className="w-3.5 h-3.5" />
-                    <span>Block User</span>
-                  </button>
-                )}
-              </div>
+            </span>
+            <div className="flex items-center gap-3">
+              {onReportCandidate && (
+                <button
+                  type="button"
+                  onClick={() => onReportCandidate(candidate)}
+                  className="text-amber-300 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  <span>Report</span>
+                </button>
+              )}
+              {onBlockCandidate && (
+                <button
+                  type="button"
+                  onClick={() => onBlockCandidate(candidate)}
+                  className="text-red-400 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Block</span>
+                </button>
+              )}
             </div>
-            <p className="text-[11px] text-[#8e8e8e]">
-              Safe Flat Visit Tips: Meet during daytime, inspect original landlord agreement, and keep your emergency contact updated in Profile.
-            </p>
           </div>
         )}
 
         {/* Messages Body */}
         <div className="flex-1 p-4 sm:p-5 overflow-y-auto bg-[#262626] space-y-3">
-          <div className="text-center my-2">
-            <span className="text-[11px] text-[#B8B8B8] bg-[#303030] px-3.5 py-1 rounded-full border border-[#444444] inline-flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Chat Unlocked · You marked Interested in {candidate.name}</span>
-            </span>
-          </div>
-
           {isPreparingChat ? (
             <div className="flex flex-col items-center justify-center py-12 gap-2 text-xs text-[#B8B8B8]">
               <Loader2 className="w-5 h-5 text-[#FFD43B] animate-spin" />
-              <span>Opening your private chat room...</span>
+              <span>Loading chat...</span>
             </div>
           ) : liveMessages.length === 0 ? (
             <div className="py-6 space-y-4">
               <p className="text-center text-xs text-[#8e8e8e]">
-                Say hello to {candidate.name.split(' ')[0]} — tap a quick message below or write your own:
+                Start the conversation with {candidate.name.split(' ')[0]}:
               </p>
               <div className="flex flex-col gap-2 max-w-md mx-auto">
                 {starterGreetings.map((greeting) => (
