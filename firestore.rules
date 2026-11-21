@@ -368,7 +368,7 @@ service cloud.firestore {
       allow get: if isVerifiedUser()
         && isValidId(swipeId)
         && (
-          (resource == null && swipeId.split('_').size() == 2 && swipeId.split('_')[0] == request.auth.uid) ||
+          (resource == null && swipeId.split('_').size() >= 2 && swipeId.split('_')[0] == request.auth.uid) ||
           (resource != null && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid))
         );
 
@@ -393,7 +393,7 @@ service cloud.firestore {
       allow get: if isVerifiedUser()
         && isValidId(matchId)
         && (
-          (resource == null && matchId.split('_').size() == 2 && (matchId.split('_')[0] == request.auth.uid || matchId.split('_')[1] == request.auth.uid)) ||
+          (resource == null && matchId.split('_').size() >= 2 && request.auth.uid in matchId.split('_')) ||
           (resource != null && (existing().userA == request.auth.uid || existing().userB == request.auth.uid))
         );
 

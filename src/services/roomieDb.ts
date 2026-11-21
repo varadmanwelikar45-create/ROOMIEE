@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
@@ -58,10 +59,24 @@ export interface FirestoreChatMessage {
   createdAt?: Timestamp | null;
 }
 
+function trimToMaxBytes(str: string, maxBytes: number): string {
+  const encoder = new TextEncoder();
+  if (encoder.encode(str).length <= maxBytes) return str;
+  let out = '';
+  let used = 0;
+  for (const ch of str) {
+    const chBytes = encoder.encode(ch).length;
+    if (used + chBytes > maxBytes) break;
+    out += ch;
+    used += chBytes;
+  }
+  return out;
+}
+
 function clampStr(val: string, fallback: string, minLen: number, maxLen: number): string {
   const cleaned = (val || '').trim();
-  if (cleaned.length < minLen) return fallback.slice(0, maxLen);
-  return cleaned.slice(0, maxLen);
+  if (cleaned.length < minLen) return trimToMaxBytes(fallback, maxLen);
+  return trimToMaxBytes(cleaned.slice(0, maxLen), maxLen);
 }
 
 function clampList(
@@ -72,7 +87,7 @@ function clampList(
   maxItemLen: number
 ): string[] {
   const cleaned = (arr || [])
-    .map((s) => (typeof s === 'string' ? s.trim().slice(0, maxItemLen) : ''))
+    .map((s) => (typeof s === 'string' ? trimToMaxBytes(s.trim().slice(0, maxItemLen), maxItemLen) : ''))
     .filter((s) => s.length > 0)
     .slice(0, maxItems);
   if (cleaned.length < minItems) return fallback.slice(0, maxItems);
@@ -240,6 +255,61 @@ export async function loadUserProfileFromDb(uid: string): Promise<UserProfile | 
 /**
  * Atomically saves or updates the user's public discovery profile and private PII/safety doc.
  */
+const ALLOWED_PUBLIC_PROFILE_KEYS = new Set([
+  'uid',
+  'name',
+  'age',
+  'gender',
+  'preferredFlatmateGender',
+  'profession',
+  'hasFlat',
+  'livingCircles',
+  'city',
+  'area',
+  'budget',
+  'photos',
+  'flatPhotos',
+  'skills',
+  'hobbies',
+  'interests',
+  'sleepSchedule',
+  'kitchenDiet',
+  'workRoutine',
+  'cleanliness',
+  'smoking',
+  'pets',
+  'personality',
+  'costBreakdown',
+  'identityVerification',
+  'listingDurationDays',
+  'expiresAt',
+  'bio',
+  'isActive',
+  'createdAt',
+  'updatedAt',
+]);
+
+const ALLOWED_PRIVATE_USER_KEYS = new Set([
+  'uid',
+  'email',
+  'phone',
+  'emergencyContact',
+  'blockedUids',
+  'createdAt',
+  'updatedAt',
+]);
+
+function isValidExistingDocShape(
+  data: Record<string, unknown> | undefined,
+  uid: string,
+  allowedKeys: Set<string>
+): boolean {
+  if (!data) return false;
+  if (data.uid !== uid) return false;
+  if (!(data.createdAt instanceof Timestamp)) return false;
+  return Object.keys(data).every((key) => allowedKeys.has(key));
+}
+
 export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
   const uid = user.id;
   const profileRef = doc(db, 'profiles', uid);
@@ -253,8 +323,16 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     throw new Error('A valid profile photo under 340KB is required to save your profile.');
   }
 
+  const sanitizedGender: Gender =
+    user.gender === 'female' || user.gender === 'other' ? user.gender : 'male';
+  const sanitizedPreferredGender: 'male' | 'female' | 'any' =
+    user.preferredFlatmateGender === 'female' || user.preferredFlatmateGender === 'any'
+      ? user.preferredFlatmateGender
+      : 'male';
+  const sanitizedHasFlat: FlatStatus = user.hasFlat === 'has_flat' ? 'has_flat' : 'needs_flat';
+
   const sanitizedFlatPhotos =
-    user.hasFlat === 'has_flat'
+    sanitizedHasFlat === 'has_flat'
       ? (user.flatPhotos || [])
           .filter((p) => typeof p === 'string' && p.length >= 10 && p.length <= 178000)
           .slice(0, 3)
@@ -262,9 +340,13 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
 
   const durationDays: 7 | 14 | 30 =
     user.listingDurationDays === 7 || user.listingDurationDays === 30 ? user.listingDurationDays : 14;
+  const parsedExpiryMs = typeof user.expiresAt === 'string' ? Date.parse(user.expiresAt) : NaN;
   const expiresAt =
-    typeof user.expiresAt === 'string' && user.expiresAt.length >= 10
-      ? user.expiresAt.slice(0, 40)
+    typeof user.expiresAt === 'string' &&
+    user.expiresAt.length >= 10 &&
+    user.expiresAt.length <= 40 &&
+    Number.isFinite(parsedExpiryMs)
+      ? user.expiresAt
       : computeExpiryIso(durationDays);
 
   const costBreakdown = sanitizeCostBreakdown(user.costBreakdown, user.budget);
@@ -293,10 +375,10 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     uid,
     name: clampStr(user.name, 'ROOMIE User', 2, 80),
     age: 26,
-    gender: user.gender || 'male',
-    preferredFlatmateGender: user.preferredFlatmateGender || 'male',
+    gender: sanitizedGender,
+    preferredFlatmateGender: sanitizedPreferredGender,
     profession: clampStr(user.skills?.[0] || 'Urban Professional', 'Urban Professional', 1, 80),
-    hasFlat: user.hasFlat || 'needs_flat',
+    hasFlat: sanitizedHasFlat,
     livingCircles: effectiveCircles,
     city: clampStr(user.flatLocation?.city, 'Bengaluru', 2, 60),
     area: clampStr(user.flatLocation?.area, 'Koramangala', 2, 100),
@@ -317,7 +399,7 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     identityVerification: sanitizeIdentityVerification(user.identityVerification),
     listingDurationDays: durationDays,
     expiresAt,
-    bio: clampStr(user.bio, 'Looking for a compatible flatmate on ROOMIE.', 1, 500),
+    bio: clampStr(user.bio, 'Looking for a compatible flatmate on ROOMIE.', 1, 450),
     isActive: true,
   };
 
@@ -325,7 +407,7 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     uid,
     email: clampStr(user.email, 'user@roomie.in', 3, 120),
     phone: clampStr(user.phone, '+91 90000 00000', 6, 25),
-    emergencyContact: (user.emergencyContact || '').trim().slice(0, 40),
+    emergencyContact: trimToMaxBytes((user.emergencyContact || '').trim().slice(0, 40), 40),
     blockedUids: clampList(user.blockedUids || [], [], 0, 50, 128),
   };
 
@@ -342,42 +424,94 @@ export async function saveUserProfileToDb(user: UserProfile): Promise<void> {
     handleFirestoreError(err, OperationType.GET, `users_private/${uid}`);
   }
 
-  const batch = writeBatch(db);
+  let profileNeedsRecreate = !existingProfile.exists();
+  if (
+    existingProfile.exists() &&
+    !isValidExistingDocShape(existingProfile.data(), uid, ALLOWED_PUBLIC_PROFILE_KEYS)
+  ) {
+    try {
+      await deleteDoc(profileRef);
+      profileNeedsRecreate = true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `profiles/${uid}`);
+    }
+  }
 
-  if (!existingProfile.exists()) {
-    batch.set(profileRef, {
-      ...publicPayload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  let privateNeedsRecreate = !existingPrivate.exists();
+  if (
+    existingPrivate.exists() &&
+    !isValidExistingDocShape(existingPrivate.data(), uid, ALLOWED_PRIVATE_USER_KEYS)
+  ) {
+    try {
+      await deleteDoc(privateRef);
+      privateNeedsRecreate = true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users_private/${uid}`);
+    }
+  }
+
+  if (profileNeedsRecreate) {
+    try {
+      await setDoc(profileRef, {
+        ...publicPayload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `profiles/${uid}`);
+    }
   } else {
     const { uid: _omitUid, ...mutablePublicFields } = publicPayload;
-    batch.update(profileRef, {
-      ...mutablePublicFields,
-      updatedAt: serverTimestamp(),
-    });
+    try {
+      await updateDoc(profileRef, {
+        ...mutablePublicFields,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (updateErr) {
+      try {
+        await deleteDoc(profileRef);
+        await setDoc(profileRef, {
+          ...publicPayload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (recreateErr) {
+        handleFirestoreError(recreateErr ?? updateErr, OperationType.WRITE, `profiles/${uid}`);
+      }
+    }
   }
 
-  if (!existingPrivate.exists()) {
-    batch.set(privateRef, {
-      ...privatePayload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+  if (privateNeedsRecreate) {
+    try {
+      await setDoc(privateRef, {
+        ...privatePayload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `users_private/${uid}`);
+    }
   } else {
-    batch.update(privateRef, {
-      email: privatePayload.email,
-      phone: privatePayload.phone,
-      emergencyContact: privatePayload.emergencyContact,
-      blockedUids: privatePayload.blockedUids,
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  try {
-    await batch.commit();
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `profiles/${uid}`);
+    try {
+      await updateDoc(privateRef, {
+        email: privatePayload.email,
+        phone: privatePayload.phone,
+        emergencyContact: privatePayload.emergencyContact,
+        blockedUids: privatePayload.blockedUids,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (updateErr) {
+      try {
+        await deleteDoc(privateRef);
+        await setDoc(privateRef, {
+          ...privatePayload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (recreateErr) {
+        handleFirestoreError(recreateErr ?? updateErr, OperationType.WRITE, `users_private/${uid}`);
+      }
+    }
   }
 }
 

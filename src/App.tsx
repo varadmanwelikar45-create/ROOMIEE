@@ -225,8 +225,12 @@ export default function App() {
 
       setCurrentUser((prev) => (prev ? { ...prev, livingCircles: nextCircles } : prev));
       try {
-        const saved = await updateUserLivingCirclesInDb(currentUser.id, nextCircles);
-        setCurrentUser((prev) => (prev ? { ...prev, livingCircles: saved } : prev));
+        try {
+          const saved = await updateUserLivingCirclesInDb(currentUser.id, nextCircles);
+          setCurrentUser((prev) => (prev ? { ...prev, livingCircles: saved } : prev));
+        } catch {
+          await saveUserProfileToDb({ ...currentUser, livingCircles: nextCircles });
+        }
       } catch (err) {
         setCurrentUser((prev) => (prev ? { ...prev, livingCircles: current } : prev));
         throw err;

@@ -9,7 +9,6 @@ import {
   Save, 
   Home, 
   Search,
-  Camera,
   Upload,
   Clock,
   RefreshCw,
@@ -304,7 +303,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onUpdateP
                       <img src={editedPhotos[0]} alt="Profile preview" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-[#FFD43B] font-bold">
-                        <Camera className="w-6 h-6" />
+                        <Upload className="w-6 h-6" />
                       </div>
                     )}
                   </div>

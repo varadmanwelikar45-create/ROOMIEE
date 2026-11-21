@@ -483,10 +483,17 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
   const { error, cleanedBase64, mimeType } = parseAndValidateImagePayload(rawBody);
   if (error) return error;
 
-  const verificationType =
-    rawBody.verificationType === 'gov_id_ai_check' || rawBody.verificationType === 'workplace_id_ai_check'
-      ? rawBody.verificationType
-      : 'selfie_liveness';
+  if (
+    rawBody.verificationType !== 'gov_id_ai_check' &&
+    rawBody.verificationType !== 'workplace_id_ai_check'
+  ) {
+    return {
+      status: 400,
+      body: {
+        error: 'Unsupported verificationType. Use gov_id_ai_check or workplace_id_ai_check.',
+      },
+    };
+  }
 
   if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
     return {
@@ -495,7 +502,7 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
         verified: false,
         isAiOrSpoof: false,
         confidence: 100,
-        reason: 'Only real camera photo formats (JPG, PNG, WEBP) are accepted for identity verification.',
+        reason: 'Only JPG, PNG, or WEBP photo files are accepted for identity verification.',
         detectedIndicators: ['Unsupported file format'],
       },
     };
@@ -514,9 +521,9 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
 
   try {
     const promptContext =
-      verificationType === 'selfie_liveness'
-        ? 'Verify that this is an authentic camera selfie of a real human person (not AI-generated, not a cartoon/avatar, not a photo of another phone/monitor screen, and a human face is visible). Natural indoor lighting, eyeglasses, or typical laptop/phone webcam quality are acceptable.'
-        : 'Verify that this is a genuine, real-world photograph of a physical student/workplace/government ID card held or placed on a real surface (not an AI-generated mockup, not a blank/random image, and not an obvious digital template). Do NOT output or transcribe any sensitive ID numbers.';
+      rawBody.verificationType === 'gov_id_ai_check'
+        ? 'Verify that this is a genuine, real-world photograph of a physical government ID card held or placed on a real surface (not an AI-generated mockup, not a blank/random image, and not an obvious digital template). Do NOT output or transcribe any sensitive ID numbers.'
+        : 'Verify that this is a genuine, real-world photograph of a physical student or workplace ID card held or placed on a real surface (not an AI-generated mockup, not a blank/random image, and not an obvious digital template). Do NOT output or transcribe any sensitive ID numbers.';
 
     const parsed = await generateStructuredVisionJson<GeminiIdentityCheckResult>({
       apiKey,
@@ -526,8 +533,8 @@ export async function verifyIdentityRequest(rawBody: VerifyPhotoRequestBody): Pr
       systemInstruction:
         'You are a strict trust & safety identity verification inspector. ' +
         'Never return or repeat personal ID numbers or Aadhaar/PAN digits. ' +
-        'Reject AI-generated faces/deepfakes, screen-moiré recaptures (photos of another screen), cartoons, solid/blank frames, or irrelevant objects. ' +
-        'Approve genuine real-world webcam or smartphone camera photos matching the requested verification type, including standard indoor lighting and close-up selfies.',
+        'Reject AI-generated mockups, screen-moiré recaptures (photos of another screen), cartoons, solid/blank frames, or irrelevant objects. ' +
+        'Approve genuine real-world photographs of physical ID documents matching the requested verification type.',
       responseSchema: {
         type: Type.OBJECT,
         properties: {

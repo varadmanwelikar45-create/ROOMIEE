@@ -1,5 +1,4 @@
 import { inferImageMimeType, prepareFlatPhotoForAiCheck } from '../utils/storage';
-import { VerificationMethod } from '../types';
 
 export interface IdentityCheckResponse {
   verified: boolean;
@@ -10,12 +9,12 @@ export interface IdentityCheckResponse {
 }
 
 /**
- * Runs a strong server-side Gemini AI liveness/authenticity check on a selfie or physical ID photo.
+ * Runs a server-side Gemini AI authenticity check on a physical ID photo.
  * Raw ID photos are inspected in-memory and never saved to public Firestore profiles.
  */
 export async function verifyIdentityProof(
   file: File,
-  verificationType: Exclude<VerificationMethod, 'google_only'>
+  verificationType: 'gov_id_ai_check' | 'workplace_id_ai_check'
 ): Promise<IdentityCheckResponse> {
   const effectiveMime = inferImageMimeType(file);
   if (!effectiveMime.startsWith('image/') || effectiveMime === 'image/svg+xml' || effectiveMime === 'image/gif') {
@@ -23,7 +22,7 @@ export async function verifyIdentityProof(
       verified: false,
       isAiOrSpoof: false,
       confidence: 100,
-      reason: 'Please upload a valid camera photo (JPG, PNG, WEBP).',
+      reason: 'Please upload a valid photo file (JPG, PNG, WEBP).',
       detectedIndicators: ['Invalid file type'],
     };
   }

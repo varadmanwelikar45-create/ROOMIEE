@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   CheckCircle2,
   Upload,
-  Camera,
   Loader2,
   LogOut,
   ExternalLink,
@@ -229,8 +228,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
     } catch (dbErr) {
       console.error('Database check error after sign-in:', dbErr);
+      let detail = '';
+      if (dbErr instanceof Error && dbErr.message.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(dbErr.message) as { operationType?: string; path?: string; error?: string };
+          if (parsed.operationType || parsed.path) {
+            detail = ` (${parsed.operationType || 'db'} on ${parsed.path || 'unknown'}: ${parsed.error || 'permission denied'})`;
+          }
+        } catch {
+          // ignore parse failure
+        }
+      } else if (dbErr instanceof Error && dbErr.message) {
+        detail = ` (${dbErr.message})`;
+      }
       setSigninError(
-        'Signed in with Google, but failed to load your ROOMIE database profile. Please try again.'
+        `Signed in with Google, but failed to load your ROOMIE database profile${detail}. Please try again.`
       );
     } finally {
       setAuthLoading(false);
@@ -716,9 +728,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   <div className="bg-[#242424] p-4 rounded-2xl border-2 border-[#FFD43B]/40 shadow-inner">
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-xs font-bold uppercase tracking-wider text-[#FFD43B] flex items-center gap-1.5">
-                        <Camera className="w-4 h-4 text-[#FFD43B]" />
+                        <Upload className="w-4 h-4 text-[#FFD43B]" />
                         <span>
-                          Upload Your Photo <span className="text-red-400">*</span>
+                          Upload Profile Photo <span className="text-red-400">*</span>
                         </span>
                       </label>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FFD43B]/20 text-[#FFD43B] border border-[#FFD43B]/30">
@@ -727,7 +739,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     </div>
 
                     <p className="text-[11px] text-[#B8B8B8] mb-3">
-                      Real photo is required so other real flatmates can see you. No AI or stock photos allowed.
+                      Upload an existing photo from your device gallery or computer so flatmates can recognize you. No AI or stock photos allowed.
                     </p>
 
                     {uploadedPhoto ? (
@@ -791,8 +803,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                         </div>
                         <span className="text-xs font-bold text-[#F5F5F5] group-hover:text-[#FFD43B]">
                           {isCheckingPhoto
-                            ? 'Scanning photo with AI detector...'
-                            : 'Click to select your profile photo'}
+                            ? 'Inspecting uploaded photo...'
+                            : 'Choose photo from gallery or computer'}
                         </span>
                         <span className="text-[10px] text-[#8e8e8e] mt-1">
                           PNG, JPG, or WEBP (Max 10MB)
